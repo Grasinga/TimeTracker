@@ -387,43 +387,39 @@ public class TimeTracker extends ListenerAdapter {
      */
     private void sendMemberInfo(User cmdUser, TextChannel channel, Member member, List<Message> clocks) {
         // TODO: Figure out how to calculate times individually for each of the two weeks.
-        // Use getHoursBetweenClocks()
-        example(clocks);
+        toDo(clocks);
 
         PrivateChannel pm = cmdUser.getPrivateChannel();
         pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__").queue();
         pm.sendMessage(messageListToString(clocks)).queue();
     } // End of sendMemberInfo()
 
-    private void example(List<Message> list) {
-        HashMap<Integer, OffsetDateTime> clockIns = new HashMap<>();
-        HashMap<Integer, OffsetDateTime> clockOuts = new HashMap<>();
+    /**
+     * Currently working on.
+     *
+     * @param list List of messages to check clock in and out times.
+     */
+    private void toDo(List<Message> list) {
+        HashMap<LocalDateTime, Double> clockDifferences = new HashMap<>();
 
-        int inCount = 0;
-        int outCount = 0;
-
-        for(Message msg : list) {
-            if (containsClockIn(msg)) {
-                inCount++;
-                clockIns.put(inCount, msg.getCreationTime());
-            }
-            if (containsClockOut(msg)) {
-                outCount++;
-                clockOuts.put(outCount, msg.getCreationTime());
+        for(int i=0; i < list.size() - 1; i++) {
+            if (containsClockIn(list.get(i)) && containsClockOut(list.get(i+1))) {
+                LocalDateTime inTime = list.get(i).getCreationTime().toLocalDateTime();
+                LocalDateTime outTime = list.get(i+1).getCreationTime().toLocalDateTime();
+                clockDifferences.put(inTime, getHoursBetweenClocks(inTime, outTime));
             }
         }
 
-        for(Map.Entry<Integer, OffsetDateTime> ins : clockIns.entrySet()) {
-            System.out.println("Ins Spot: " + ins.getKey() + " | "
-                    + getTimeStamp(ins.getValue().atZoneSameInstant(timeZone).toLocalDateTime()));
-
-        }
-        for(Map.Entry<Integer, OffsetDateTime> outs : clockOuts.entrySet()) {
-            System.out.println("Outs Spot: " + outs.getKey() + " | "
-                    + getTimeStamp(outs.getValue().atZoneSameInstant(timeZone).toLocalDateTime()));
-        }
+        for(Map.Entry<LocalDateTime, Double> entry : clockDifferences.entrySet())
+            System.out.println(getTimeStamp(entry.getKey().atZone(timeZone)) + " -> " + entry.getValue() + " hours");
     }
 
+    /**
+     * Checks if a {@link Message} has a clock in key word.
+     *
+     * @param message {@link Message} to be checked.
+     * @return Whether the message passed in contains a clock in key word.
+     */
     private boolean containsClockIn(Message message) {
         for(String clockInWord : CLOCK_IN_WORDS)
             if(message.getContent().toLowerCase().contains(" " + clockInWord.toLowerCase() + " "))
@@ -431,6 +427,12 @@ public class TimeTracker extends ListenerAdapter {
         return false;
     }
 
+    /**
+     * Checks if a {@link Message} has a clock out key word.
+     *
+     * @param message {@link Message} to be checked.
+     * @return Whether the message passed in contains a clock out key word.
+     */
     private boolean containsClockOut(Message message) {
         for(String clockOutWord : CLOCK_OUT_WORDS)
             if(message.getContent().toLowerCase().contains(" " + clockOutWord.toLowerCase() + " "))
