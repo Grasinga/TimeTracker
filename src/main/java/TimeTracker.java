@@ -71,6 +71,9 @@ public class TimeTracker extends ListenerAdapter {
      */
     private HashMap<Member, List<Message>> tracker = new HashMap<>();
 
+    private Date twoWeekStartDate = new Date();
+    private Date twoWeekEndDate = new Date();
+
     /**
      * Starts the bot with the given arguments (from command line or bot.properties).
      *
@@ -231,12 +234,13 @@ public class TimeTracker extends ListenerAdapter {
             addMemberInfoToTracker(m, channelMessages);
 
         // Get dates to check clock in and out messages.
-        Date twoWeekStartDate = getStartDate(dateAsString);
-        Date twoWeekEndDate = getEndDate(twoWeekStartDate);
+        twoWeekStartDate = getStartDate(dateAsString);
+        twoWeekEndDate = getEndDate(twoWeekStartDate);
 
         // Get messages only from within the two weeks.
         trimTrackerMessagesFromDates(twoWeekStartDate, twoWeekEndDate);
 
+        // Send messages and times to cmdUser.
         for(Map.Entry<Member, List<Message>> entry : tracker.entrySet()) {
             sendMemberInfo(cmdUser, channel, entry.getKey(), entry.getValue());
         }
@@ -284,7 +288,8 @@ public class TimeTracker extends ListenerAdapter {
      * @return True if a clocked in or out word is contained in the message.
      */
     private boolean containsClockWords(String message) {
-        ArrayList<String> clockWords = CLOCK_IN_WORDS;
+        ArrayList<String> clockWords = new ArrayList<>();
+        clockWords.addAll(CLOCK_IN_WORDS);
         clockWords.addAll(CLOCK_OUT_WORDS);
 
         for(String clockWord : clockWords)
@@ -366,6 +371,14 @@ public class TimeTracker extends ListenerAdapter {
         return toCheck.after(min) && toCheck.before(max);
     } // End of isBetweenDates()
 
+    private boolean isWeekOne(Date toCheck) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(twoWeekStartDate);
+        calendar.add(Calendar.DAY_OF_YEAR, 6); // Saturday to Friday (First week).
+
+        return isBetweenDates(twoWeekStartDate, calendar.getTime(), toCheck);
+    } // End of isWeekOne()
+
     /**
      * Converts a {@link LocalDate} to a {@link Date}.
      *
@@ -383,36 +396,46 @@ public class TimeTracker extends ListenerAdapter {
      * @param cmdUser The '/times MM/dd/yy' command {@link User}.
      * @param channel The {@link TextChannel} the command was run in.
      * @param member The {@link Member} who's messages and times are being sent.
-     * @param clocks The {@link Message}s of the member that contain the clock in and out times.
+     * @param listOfClocks The {@link Message}s of the member that contain the clock in and out times.
      */
-    private void sendMemberInfo(User cmdUser, TextChannel channel, Member member, List<Message> clocks) {
+    private void sendMemberInfo(User cmdUser, TextChannel channel, Member member, List<Message> listOfClocks) {
         // TODO: Figure out how to calculate times individually for each of the two weeks.
-        toDo(clocks);
+        HashMap<Integer, List<Message>> clocks = splitWeeks(hashClocks(listOfClocks));
 
         PrivateChannel pm = cmdUser.getPrivateChannel();
         pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__").queue();
-        pm.sendMessage(messageListToString(clocks)).queue();
+        pm.sendMessage(messageListToString(listOfClocks)).queue();
     } // End of sendMemberInfo()
 
-    /**
-     * Currently working on.
-     *
-     * @param list List of messages to check clock in and out times.
-     */
-    private void toDo(List<Message> list) {
-        HashMap<LocalDateTime, Double> clockDifferences = new HashMap<>();
+    private HashMap<Integer, List<Message>> splitWeeks(HashMap<Date, Message> clocks) {
+        HashMap<Integer, List<Message>> sortedClocks = new HashMap<>();
+        List<Message> weekOneMessages = new ArrayList<>();
+        List<Message> weekTwoMessages = new ArrayList<>();
 
-        for(int i=0; i < list.size() - 1; i++) {
-            if (containsClockIn(list.get(i)) && containsClockOut(list.get(i+1))) {
-                LocalDateTime inTime = list.get(i).getCreationTime().toLocalDateTime();
-                LocalDateTime outTime = list.get(i+1).getCreationTime().toLocalDateTime();
-                clockDifferences.put(inTime, getHoursBetweenClocks(inTime, outTime));
-            }
+        for(Map.Entry<Date, Message> entry : clocks.entrySet()) {
+            if(isWeekOne(entry.getKey()))
+                weekOneMessages.add(entry.getValue());
+            else
+                weekTwoMessages.add(entry.getValue());
         }
 
-        for(Map.Entry<LocalDateTime, Double> entry : clockDifferences.entrySet())
-            System.out.println(getTimeStamp(entry.getKey().atZone(timeZone)) + " -> " + entry.getValue() + " hours");
+        sortedClocks.put(1, weekOneMessages);
+        sortedClocks.put(2, weekTwoMessages);
+
+        return sortedClocks;
     }
+
+    /**
+     * Adds the messages to a HashMap that contains the message's Date as the key.
+     *
+     * @param list List of messages that contains clock in and out times.
+     */
+    private HashMap<Date, Message> hashClocks(List<Message> list) {
+        HashMap<Date, Message> clocks = new HashMap<>();
+        for(Message m : list)
+            clocks.put(convertLocalDate(m.getCreationTime().toLocalDate()), m);
+        return clocks;
+    } // End of hashClocks()
 
     /**
      * Checks if a {@link Message} has a clock in key word.
@@ -425,7 +448,7 @@ public class TimeTracker extends ListenerAdapter {
             if(message.getContent().toLowerCase().contains(" " + clockInWord.toLowerCase() + " "))
                 return true;
         return false;
-    }
+    } // End of containsClockIn()
 
     /**
      * Checks if a {@link Message} has a clock out key word.
@@ -438,7 +461,7 @@ public class TimeTracker extends ListenerAdapter {
             if(message.getContent().toLowerCase().contains(" " + clockOutWord.toLowerCase() + " "))
                 return true;
         return false;
-    }
+    } // End of containsClockOut()
 
     /**
      * Converts a list of {@link Message}s into a single String.
@@ -474,7 +497,7 @@ public class TimeTracker extends ListenerAdapter {
             if(m.getUser() == user)
                 return m.getEffectiveName();
         return "Unknown"; // The passed in user was not found in the passed in guild.
-    }
+    } // end of getEffectiveNameOfUser()
 
     /**
      * Logic needs working on. TODO
