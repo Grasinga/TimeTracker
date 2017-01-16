@@ -244,6 +244,7 @@ public class TimeTracker extends ListenerAdapter {
         // Send messages and times to cmdUser.
         for(Map.Entry<Member, List<Message>> entry : tracker.entrySet()) {
             sendMemberInfo(cmdUser, channel, entry.getKey(), entry.getValue());
+            cmdUser.getPrivateChannel().sendMessage("--------------------").queue();
         }
     } // End of getTimes()
 
@@ -401,9 +402,25 @@ public class TimeTracker extends ListenerAdapter {
         }
 
         PrivateChannel pm = cmdUser.getPrivateChannel();
-        pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__").queue();
-        pm.sendMessage(messageListToString(listOfClocks)).queue();
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
+        pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__\n\n"
+                        + messageListToString(listOfClocks) + "\n"
+                        + sdf.format((twoWeekStartDate)) + " - "
+                        + sdf.format(getEndOfWeekOne()) + ": "
+                        + calculateTimeDifferences(clocks.get(1)) + " hours"
+                        + "\n\n"
+                        + sdf.format(getStartOfWeekTwo()) + " - "
+                        + sdf.format(twoWeekEndDate) + ": "
+                        + calculateTimeDifferences(clocks.get(2)) + " hours"
+                        + "\n\n"
+                        + "Total: " + (calculateTimeDifferences(clocks.get(1)) + calculateTimeDifferences(clocks.get(2)))
+                        + " hours"
+        ).queue();
     } // End of sendMemberInfo()
+
+    private double calculateTimeDifferences(List<Message> clocks) {
+        return 11.25;
+    }
 
     /**
      * Splits up the passed in list of {@link Message}s into two weeks based on the message's timestamp.
@@ -444,6 +461,22 @@ public class TimeTracker extends ListenerAdapter {
         return isBetweenDates(twoWeekStartDate, calendar.getTime(), toCheck);
     } // End of isWeekOne()
 
+    private Date getEndOfWeekOne() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(twoWeekStartDate);
+        calendar.add(Calendar.DAY_OF_YEAR, 6); // Saturday to Friday (First week).
+
+        return calendar.getTime();
+    } // End of getEndOfWeekOne()
+
+    private Date getStartOfWeekTwo() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(twoWeekStartDate);
+        calendar.add(Calendar.DAY_OF_YEAR, 7); // Saturday of week 2 (start).
+
+        return calendar.getTime();
+    } // End of getStartOfWeekTwo()
+
     /**
      * Checks if a {@link Message} has a clock in key word.
      *
@@ -482,7 +515,7 @@ public class TimeTracker extends ListenerAdapter {
         String str = "";
         for(Message m : list) {
             str += getTimeStamp(m.getCreationTime().atZoneSameInstant(timeZone).toLocalDateTime())
-                    + " " + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n";
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n";
         }
 
         if(str.length() < 1) // No messages between the start and end date.
@@ -505,19 +538,6 @@ public class TimeTracker extends ListenerAdapter {
                 return m.getEffectiveName();
         return "Unknown"; // The passed in user was not found in the passed in guild.
     } // end of getEffectiveNameOfUser()
-
-    /**
-     * Logic needs working on.
-     * @param in
-     * @param out
-     * @return
-     */
-    private double getHoursBetweenClocks(LocalDateTime in, LocalDateTime out) {
-        // TODO
-        int hours = Math.abs(in.getHour() - out.getHour());
-        double minutes = convertMinutes(calculateMinutes(in.getMinute()) - calculateMinutes(out.getMinute()));
-        return Math.abs(minutes / 100) + hours;
-    } // End of getHoursBetweenClocks()
 
     /**
      * Formats {@link LocalDateTime}s using {@link #TIMESTAMP} as the pattern. {@link #TIMESTAMP} is initialized via the
