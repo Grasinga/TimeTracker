@@ -51,7 +51,7 @@ public class TimeTracker extends ListenerAdapter {
      * Variable that contains the list of clock in key words; is populated by the bot.properties file.
      * Has the default values of "In" and "On".
      */
-    private static ArrayList<String> CLOCK_IN_WORDS = new ArrayList<>(Arrays.asList("In","On"));
+    private static ArrayList<String> CLOCK_IN_WORDS = new ArrayList<>(Arrays.asList("In","On", "Back"));
 
     /**
      * Variable that contains the list of clock out key words; is populated by the bot.properties file.
@@ -231,7 +231,8 @@ public class TimeTracker extends ListenerAdapter {
         List<Message> channelMessages = getChannelMessageHistory(channel);
 
         for(Member m : channel.getMembers())
-            addMemberInfoToTracker(m, channelMessages);
+            if(!m.getUser().isBot())
+                addMemberInfoToTracker(m, channelMessages);
 
         // Get dates to check clock in and out messages.
         twoWeekStartDate = getStartDate(dateAsString);
@@ -371,14 +372,6 @@ public class TimeTracker extends ListenerAdapter {
         return toCheck.after(min) && toCheck.before(max);
     } // End of isBetweenDates()
 
-    private boolean isWeekOne(Date toCheck) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(twoWeekStartDate);
-        calendar.add(Calendar.DAY_OF_YEAR, 6); // Saturday to Friday (First week).
-
-        return isBetweenDates(twoWeekStartDate, calendar.getTime(), toCheck);
-    } // End of isWeekOne()
-
     /**
      * Converts a {@link LocalDate} to a {@link Date}.
      *
@@ -400,23 +393,35 @@ public class TimeTracker extends ListenerAdapter {
      */
     private void sendMemberInfo(User cmdUser, TextChannel channel, Member member, List<Message> listOfClocks) {
         // TODO: Figure out how to calculate times individually for each of the two weeks.
-        HashMap<Integer, List<Message>> clocks = splitWeeks(hashClocks(listOfClocks));
+        Collections.reverse(listOfClocks);
+        HashMap<Integer, List<Message>> clocks = splitWeeks(listOfClocks);
+
+        for(Map.Entry<Integer, List<Message>> entry : clocks.entrySet()) {
+            System.out.println("Week " +  entry.getKey() + ": " + entry.getValue() + " (" + entry.getValue().size() + ")");
+        }
 
         PrivateChannel pm = cmdUser.getPrivateChannel();
         pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__").queue();
         pm.sendMessage(messageListToString(listOfClocks)).queue();
     } // End of sendMemberInfo()
 
-    private HashMap<Integer, List<Message>> splitWeeks(HashMap<Date, Message> clocks) {
+    /**
+     * Splits up the passed in list of {@link Message}s into two weeks based on the message's timestamp.
+     * HashMap's Integer = Week Number
+     *
+     * @param clocks List of passed in {@link Message}s.
+     * @return HashMap of {@link Message}s with the key being the week.
+     */
+    private HashMap<Integer, List<Message>> splitWeeks(List<Message> clocks) {
         HashMap<Integer, List<Message>> sortedClocks = new HashMap<>();
         List<Message> weekOneMessages = new ArrayList<>();
         List<Message> weekTwoMessages = new ArrayList<>();
 
-        for(Map.Entry<Date, Message> entry : clocks.entrySet()) {
-            if(isWeekOne(entry.getKey()))
-                weekOneMessages.add(entry.getValue());
+        for(Message m : clocks) {
+            if(isWeekOne(convertLocalDate(m.getCreationTime().toLocalDate())))
+                weekOneMessages.add(m);
             else
-                weekTwoMessages.add(entry.getValue());
+                weekTwoMessages.add(m);
         }
 
         sortedClocks.put(1, weekOneMessages);
@@ -426,16 +431,18 @@ public class TimeTracker extends ListenerAdapter {
     }
 
     /**
-     * Adds the messages to a HashMap that contains the message's Date as the key.
+     * Check if the date passed in is from the first week based on the {@link #twoWeekStartDate}.
      *
-     * @param list List of messages that contains clock in and out times.
+     * @param toCheck Date to be checked.
+     * @return Whether toCheck date falls within the first week based on the {@link #twoWeekStartDate}.
      */
-    private HashMap<Date, Message> hashClocks(List<Message> list) {
-        HashMap<Date, Message> clocks = new HashMap<>();
-        for(Message m : list)
-            clocks.put(convertLocalDate(m.getCreationTime().toLocalDate()), m);
-        return clocks;
-    } // End of hashClocks()
+    private boolean isWeekOne(Date toCheck) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(twoWeekStartDate);
+        calendar.add(Calendar.DAY_OF_YEAR, 6); // Saturday to Friday (First week).
+
+        return isBetweenDates(twoWeekStartDate, calendar.getTime(), toCheck);
+    } // End of isWeekOne()
 
     /**
      * Checks if a {@link Message} has a clock in key word.
@@ -500,12 +507,13 @@ public class TimeTracker extends ListenerAdapter {
     } // end of getEffectiveNameOfUser()
 
     /**
-     * Logic needs working on. TODO
+     * Logic needs working on.
      * @param in
      * @param out
      * @return
      */
     private double getHoursBetweenClocks(LocalDateTime in, LocalDateTime out) {
+        // TODO
         int hours = Math.abs(in.getHour() - out.getHour());
         double minutes = convertMinutes(calculateMinutes(in.getMinute()) - calculateMinutes(out.getMinute()));
         return Math.abs(minutes / 100) + hours;
