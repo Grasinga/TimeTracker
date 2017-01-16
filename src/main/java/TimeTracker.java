@@ -393,13 +393,12 @@ public class TimeTracker extends ListenerAdapter {
      * @param listOfClocks The {@link Message}s of the member that contain the clock in and out times.
      */
     private void sendMemberInfo(User cmdUser, TextChannel channel, Member member, List<Message> listOfClocks) {
-        // TODO: Figure out how to calculate times individually for each of the two weeks.
         Collections.reverse(listOfClocks);
         HashMap<Integer, List<Message>> clocks = splitWeeks(listOfClocks);
 
-        for(Map.Entry<Integer, List<Message>> entry : clocks.entrySet()) {
-            System.out.println("Week " +  entry.getKey() + ": " + entry.getValue() + " (" + entry.getValue().size() + ")");
-        }
+//        for(Map.Entry<Integer, List<Message>> entry : clocks.entrySet()) {
+//            System.out.println("Week " +  entry.getKey() + ": " + entry.getValue() + " (" + entry.getValue().size() + ")");
+//        }
 
         PrivateChannel pm = cmdUser.getPrivateChannel();
         SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
@@ -419,7 +418,19 @@ public class TimeTracker extends ListenerAdapter {
     } // End of sendMemberInfo()
 
     private double calculateTimeDifferences(List<Message> clocks) {
-        return 11.25;
+        HashMap<Integer, Message> ins = new HashMap<>();
+        HashMap<Integer, Message> outs = new HashMap<>();
+
+        for(int i=0; i < clocks.size(); i++) {
+            if(containsClockIn(clocks.get(i)))
+                ins.put(i, clocks.get(i));
+            else
+                outs.put(i, clocks.get(i));
+        }
+
+        // TODO: Logic to find the difference between ins[i] and outs[i]
+
+        return 11.25; // Place holder.
     }
 
     /**
@@ -478,10 +489,12 @@ public class TimeTracker extends ListenerAdapter {
     } // End of getStartOfWeekTwo()
 
     /**
-     * Checks if a {@link Message} has a clock in key word.
+     * Checks if a {@link Message} has a clock in key word. It also checks for clock outs via the return
+     * value of false. (There are only clock in and out messages being passed into this method; extraneous messages
+     * are non-existent.)
      *
      * @param message {@link Message} to be checked.
-     * @return Whether the message passed in contains a clock in key word.
+     * @return Whether the message passed in contains a clock in (true) or clock out (false) key word.
      */
     private boolean containsClockIn(Message message) {
         for(String clockInWord : CLOCK_IN_WORDS)
@@ -489,19 +502,6 @@ public class TimeTracker extends ListenerAdapter {
                 return true;
         return false;
     } // End of containsClockIn()
-
-    /**
-     * Checks if a {@link Message} has a clock out key word.
-     *
-     * @param message {@link Message} to be checked.
-     * @return Whether the message passed in contains a clock out key word.
-     */
-    private boolean containsClockOut(Message message) {
-        for(String clockOutWord : CLOCK_OUT_WORDS)
-            if(message.getContent().toLowerCase().contains(" " + clockOutWord.toLowerCase() + " "))
-                return true;
-        return false;
-    } // End of containsClockOut()
 
     /**
      * Converts a list of {@link Message}s into a single String.
