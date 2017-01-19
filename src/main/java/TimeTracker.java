@@ -273,13 +273,14 @@ public class TimeTracker extends ListenerAdapter {
         List<Message> userMessages = new ArrayList<>();
 
         for(Message m : channelMessages) {
-            if(m.getAuthor() == member.getUser() || m.isMentioned(member.getUser())) {
+            if(m.isMentioned(member.getUser())) {
                 if(containsClockWords(m.getContent()))
                     userMessages.add(m);
             }
         }
 
-        tracker.put(member, userMessages);
+        if(userMessages.size() > 0)
+            tracker.put(member, userMessages);
     } // End of addMemberInfoToTracker()
 
     /**
@@ -424,30 +425,28 @@ public class TimeTracker extends ListenerAdapter {
 
         for(int i=0; i < clocks.size() - 1; i+=2){
             if(containsClockIn(clocks.get(i)) && !containsClockIn(clocks.get(i+1))) {
-                int inStart = clocks.get(i).getContent().length() - 8;
-                int outStart = clocks.get(i+1).getContent().length() - 8;
+                try {
+                    int inStart = clocks.get(i).getContent().length() - 8;
+                    int outStart = clocks.get(i + 1).getContent().length() - 8;
 
-                int inHour = Integer.parseInt(
-                        clocks.get(i).getContent().substring(inStart, inStart + 2)
-                );
-                int outHour = Integer.parseInt(
-                        clocks.get(i+1).getContent().substring(outStart, outStart + 2)
-                );
-                System.out.println("In Hour: " + inHour + " | Out Hour: " + outHour);
-                hours += Math.abs(outHour - inHour);
+                    int inHour = Integer.parseInt(
+                            clocks.get(i).getContent().substring(inStart, inStart + 2)
+                    );
+                    int outHour = Integer.parseInt(
+                            clocks.get(i + 1).getContent().substring(outStart, outStart + 2)
+                    );
+                    hours += Math.abs(outHour - inHour);
 
-                int inMinutes = Integer.parseInt(
-                        clocks.get(i).getContent().substring(inStart + 3, inStart + 5)
-                );
-                int outMinutes = Integer.parseInt(
-                        clocks.get(i+1).getContent().substring(outStart + 3, outStart + 5)
-                );
-                System.out.println("In Minutes: " + inMinutes + " | Out Minutes: " + outMinutes);
-                minutes += convertMinutes(Math.abs(calculateMinutes(outMinutes) - calculateMinutes(inMinutes)));
-                System.out.println();
-                System.out.println("Hours: " + hours + " | Minutes: " + minutes);
-                System.out.println();
-                System.out.println("-----");
+                    int inMinutes = Integer.parseInt(
+                            clocks.get(i).getContent().substring(inStart + 3, inStart + 5)
+                    );
+                    int outMinutes = Integer.parseInt(
+                            clocks.get(i + 1).getContent().substring(outStart + 3, outStart + 5)
+                    );
+                    minutes += convertMinutes(Math.abs(calculateMinutes(outMinutes) - calculateMinutes(inMinutes)));
+                } catch (NumberFormatException nfe) {
+                    System.out.println("Incorrect clock: " + nfe.getCause());
+                }
             }
         }
 
