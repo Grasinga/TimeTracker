@@ -402,7 +402,7 @@ public class TimeTracker extends ListenerAdapter {
 //            System.out.println("Week " +  entry.getKey() + ": " + entry.getValue() + " (" + entry.getValue().size() + ")");
 //        }
 
-        PrivateChannel pm = cmdUser.getPrivateChannel();
+        PrivateChannel pm = cmdUser.openPrivateChannel().complete();
         SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
         pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__\n\n"
                         + messageListToString(listOfClocks) + "\n"
@@ -445,7 +445,7 @@ public class TimeTracker extends ListenerAdapter {
                     );
                     minutes += convertMinutes(Math.abs(calculateMinutes(outMinutes) - calculateMinutes(inMinutes)));
                 } catch (NumberFormatException nfe) {
-                    System.out.println("Incorrect clock: " + nfe.getCause());
+                    System.out.println("Incorrect clock: " + clocks.get(i) + " | or | " + clocks.get(i+1));
                 }
             }
         }
