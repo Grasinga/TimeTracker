@@ -398,10 +398,6 @@ public class TimeTracker extends ListenerAdapter {
         Collections.reverse(clocks.get(1));
         Collections.reverse(clocks.get(2));
 
-//        for(Map.Entry<Integer, List<Message>> entry : clocks.entrySet()) {
-//            System.out.println("Week " +  entry.getKey() + ": " + entry.getValue() + " (" + entry.getValue().size() + ")");
-//        }
-
         PrivateChannel pm = cmdUser.openPrivateChannel().complete();
         SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
         pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__\n\n"
@@ -420,52 +416,36 @@ public class TimeTracker extends ListenerAdapter {
     } // End of sendMemberInfo()
 
     private double calculateTimeDifferences(List<Message> clocks) {
-        int hours = 0;
-        double minutes = 0.0;
+        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = hashClocks(clocks);
 
-        for(int i=0; i < clocks.size() - 1; i+=2){
-            if(containsClockIn(clocks.get(i)) && !containsClockIn(clocks.get(i+1))) {
-                try {
-                    int inStart = clocks.get(i).getContent().length() - 8;
-                    int outStart = clocks.get(i + 1).getContent().length() - 8;
-
-                    int inHour = Integer.parseInt(
-                            clocks.get(i).getContent().substring(inStart, inStart + 2)
-                    );
-                    int outHour = Integer.parseInt(
-                            clocks.get(i + 1).getContent().substring(outStart, outStart + 2)
-                    );
-                    hours += Math.abs(outHour - inHour);
-
-                    int inMinutes = Integer.parseInt(
-                            clocks.get(i).getContent().substring(inStart + 3, inStart + 5)
-                    );
-                    int outMinutes = Integer.parseInt(
-                            clocks.get(i + 1).getContent().substring(outStart + 3, outStart + 5)
-                    );
-                    minutes += convertMinutes(Math.abs(calculateMinutes(outMinutes) - calculateMinutes(inMinutes)));
-                } catch (NumberFormatException nfe) {
-                    System.out.println("Incorrect clock: " + clocks.get(i) + " | or | " + clocks.get(i+1));
-                }
+        for(Map.Entry<String, HashMap<LocalDate, Message>> entry : hashedClocks.entrySet()) {
+            for(Map.Entry<LocalDate, Message> clock : entry.getValue().entrySet()) {
+                // . . .
             }
         }
 
+        int hours = 0;
+        double minutes = 0.0;
+
+
         return Math.abs(minutes / 100) + hours;
-//        HashMap<Integer, Message> ins = new HashMap<>();
-//        HashMap<Integer, Message> outs = new HashMap<>();
-//
-//        for(int i=0; i < clocks.size(); i++) {
-//            if(containsClockIn(clocks.get(i)))
-//                ins.put(i, clocks.get(i));
-//            else
-//                outs.put(i, clocks.get(i));
-//        }
-//
-//
-//
-//        // TODO: Logic to find the difference between ins and outs
-//
-//        return 11.25; // Place holder.
+    }
+
+    private HashMap<String, HashMap<LocalDate, Message>> hashClocks(List<Message> clocks) {
+        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = new HashMap<>();
+        HashMap<LocalDate, Message> clockIns = new HashMap<>();
+        HashMap<LocalDate, Message> clockOuts = new HashMap<>();
+
+        for(Message m : clocks)
+            if(containsClockIn(m))
+                clockIns.put(m.getCreationTime().toLocalDate(), m);
+            else
+                clockOuts.put(m.getCreationTime().toLocalDate(), m);
+
+        hashedClocks.put("Ins", clockIns);
+        hashedClocks.put("Outs", clockOuts);
+
+        return hashedClocks;
     }
 
     /**
