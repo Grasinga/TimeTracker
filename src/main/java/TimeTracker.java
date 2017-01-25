@@ -416,37 +416,65 @@ public class TimeTracker extends ListenerAdapter {
     } // End of sendMemberInfo()
 
     private double calculateTimeDifferences(List<Message> clocks) {
-        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = hashClocks(clocks);
-
-        for(Map.Entry<String, HashMap<LocalDate, Message>> entry : hashedClocks.entrySet()) {
-            for(Map.Entry<LocalDate, Message> clock : entry.getValue().entrySet()) {
-                // . . .
-            }
-        }
+        HashMap<Message, Date> timedClocks = getMessagesWithTime(clocks);
+        Calendar calendar = Calendar.getInstance();
 
         int hours = 0;
-        double minutes = 0.0;
+        int minutes = 0;
+
+        for(int i = 0; i < clocks.size()-1; i++) {
+            if(containsClockIn(clocks.get(i)) && !containsClockIn(clocks.get(i+1))) {
+                Message in = clocks.get(i);
+                Message out = clocks.get(i+1);
+
+                calendar.setTime(timedClocks.get(in));
+                int inHour = calendar.get(Calendar.HOUR_OF_DAY);
+                int inMinute = calculateMinutes(calendar.get(Calendar.MINUTE));
+
+                calendar.setTime(timedClocks.get(out));
+                int outHour = calendar.get(Calendar.HOUR_OF_DAY);
+                int outMinute = calculateMinutes(calendar.get(Calendar.MINUTE));
+
+                hours += Math.abs(outHour - inHour);
+                minutes += Math.abs(outMinute - inMinute);
+            }
+        }
 
 
         return Math.abs(minutes / 100) + hours;
     }
 
-    private HashMap<String, HashMap<LocalDate, Message>> hashClocks(List<Message> clocks) {
-        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = new HashMap<>();
-        HashMap<LocalDate, Message> clockIns = new HashMap<>();
-        HashMap<LocalDate, Message> clockOuts = new HashMap<>();
-
-        for(Message m : clocks)
-            if(containsClockIn(m))
-                clockIns.put(m.getCreationTime().toLocalDate(), m);
-            else
-                clockOuts.put(m.getCreationTime().toLocalDate(), m);
-
-        hashedClocks.put("Ins", clockIns);
-        hashedClocks.put("Outs", clockOuts);
-
-        return hashedClocks;
+    private HashMap<Message, Date> getMessagesWithTime(List<Message> clocks) {
+        HashMap<Message, Date> timedClocks = new HashMap<>();
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy hh:mm a");
+        for(Message m : clocks) {
+            int month = m.getCreationTime().getMonthValue();
+            int day = m.getCreationTime().getDayOfMonth();
+            int year = m.getCreationTime().getYear();
+            String time = m.getContent().substring(m.getContent().length()-8);
+            try {
+                timedClocks.put(m, sdf.parse(month + "/" + day + "/" + year + " " + time));
+            } catch (Exception e) {System.out.println("Unable to get time for: " + m.getContent());}
+        }
+        return timedClocks;
     }
+
+//    private HashMap<String, HashMap<LocalDate, Message>> hashClocks(List<Message> clocks) {
+//        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = new HashMap<>();
+//        HashMap<LocalDate, Message> clockIns = new HashMap<>();
+//        HashMap<LocalDate, Message> clockOuts = new HashMap<>();
+//
+//        for(Message m : clocks)
+//            if(containsClockIn(m))
+//                clockIns.put(m.getCreationTime().toLocalDate(), m);
+//            else
+//                clockOuts.put(m.getCreationTime().toLocalDate(), m);
+//
+//        hashedClocks.put("Ins", clockIns);
+//        hashedClocks.put("Outs", clockOuts);
+//
+//        return hashedClocks;
+//    }
 
     /**
      * Splits up the passed in list of {@link Message}s into two weeks based on the message's timestamp.
