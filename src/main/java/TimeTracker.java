@@ -29,6 +29,11 @@ import java.util.*;
 public class TimeTracker extends ListenerAdapter {
 
     /**
+     * Variable that holds the URL where the log is displayed.
+     */
+    private static String LOG_URL = "";
+
+    /**
      * Variable that hold's the Bot's name on Discord; initialized via the bot.properties file. Has a default value of
      * "TimeTracker".
      */
@@ -69,11 +74,6 @@ public class TimeTracker extends ListenerAdapter {
      * initialized by the bot.properties file. Has a default value of 3.
      */
     private static int RETRIEVABLE_MESSAGE_AMOUNT = 3;
-
-    /**
-     * Variable that holds the URL where the log is displayed.
-     */
-    private static String logURL = "";
 
     /**
      * A {@link HashMap} that contains the {@link Member}s and their respective {@link Message}'s when the
@@ -122,6 +122,10 @@ public class TimeTracker extends ListenerAdapter {
 
             properties = br.readLine();
             if(properties != null)
+                LOG_URL = properties;
+
+            properties = br.readLine();
+            if(properties != null)
                 BOT_NAME = properties;
 
             properties = br.readLine();
@@ -149,10 +153,6 @@ public class TimeTracker extends ListenerAdapter {
             properties = br.readLine();
             if(properties != null)
                 RETRIEVABLE_MESSAGE_AMOUNT = Integer.parseInt(properties);
-
-            properties = br.readLine();
-            if(properties != null)
-                logURL = properties;
 
             br.close();
 
@@ -568,13 +568,13 @@ public class TimeTracker extends ListenerAdapter {
             ).queue();
             if (invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to invalid clocks. Check " + logURL + " for more info."
+                        "Hours calculated may be invalid due to invalid clocks. Check " + LOG_URL + " for more info."
                 ).queue();
                 logInvalidsToFile(member);
             }
             if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to missing clock outs. Check " + logURL + " for more info."
+                        "Hours calculated may be invalid due to missing clock outs. Check " + LOG_URL + " for more info."
                 ).queue();
                 logSinglesToFile(member);
             }
