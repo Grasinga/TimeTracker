@@ -12,26 +12,27 @@ import java.io.*;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.Temporal;
 import java.util.*;
 
 /**
- * Discord bot that tracks and logs user messages and their times based on a two week period.
+ * A Discord bot that tracks and logs user messages if they contain clock in/out key words; it then calculates the time
+ * differences between those messages, and finally sends the command user the list of messages that contained the clock
+ * in/out key words and their calculated times.
  */
 public class TimeTracker extends ListenerAdapter {
 
     /**
-     * Variable that hold's the Bot's name on Discord; initialized via the bot.properties file.
-     * Has a default value of "TimeTracker".
+     * Variable that hold's the Bot's name on Discord; initialized via the bot.properties file. Has a default value of
+     * "TimeTracker".
      */
     private static String BOT_NAME = "TimeTracker";
 
     /**
-     * The current timezone the bot is running in; initialized via the bot.properties file.
-     * Default value is "America/Denver".
+     * The current timezone the bot is running in; initialized via the bot.properties file. Has a default value of
+     * "America/Denver".
      */
     private static String TIMEZONE = "America/Denver";
 
@@ -42,36 +43,55 @@ public class TimeTracker extends ListenerAdapter {
     private ZoneId timeZone = TimeZone.getTimeZone(TIMEZONE).toZoneId();
 
     /**
-     * Variable that is used to format the timestamp on messages; initialized by the bot.properties file.
-     * Has a default value of "MM/dd/yy (E) @ hh:mm a | ".
+     * Variable that is used to format the timestamp on messages; initialized by the bot.properties file. Has a default
+     * value of "MM/dd/yy (E) @ hh:mm a | ".
      */
     private static String TIMESTAMP = "MM/dd/yy (E) @ hh:mm a | "; // Formatter for the time stamp on messages.
 
     /**
-     * Variable that contains the list of clock in key words; is populated by the bot.properties file.
-     * Has the default values of "In" and "On".
+     * Variable that contains the {@link List} of clock in key words; is populated by the bot.properties file. Has the
+     * default values of "In" and "On".
      */
-    private static ArrayList<String> CLOCK_IN_WORDS = new ArrayList<>(Arrays.asList("In","On", "Back"));
+    private static List<String> CLOCK_IN_WORDS = new ArrayList<>(Arrays.asList("In", "On", "Back"));
 
     /**
-     * Variable that contains the list of clock out key words; is populated by the bot.properties file.
-     * Has the default values of "Out" and "Off".
+     * Variable that contains the {@link List} of clock out key words; is populated by the bot.properties file. Has the
+     * default values of "Out" and "Off".
      */
-    private static ArrayList<String> CLOCK_OUT_WORDS = new ArrayList<>(Arrays.asList("Out","Off"));
+    private static List<String> CLOCK_OUT_WORDS = new ArrayList<>(Arrays.asList("Out", "Off"));
 
     /**
-     * Variable that holds the amount of messages to retrieve from a {@link TextChannel}'s history * 100;
+     * Variable that holds the amount of {@link Message}s to retrieve from a {@link TextChannel}'s history * 100;
      * initialized by the bot.properties file. Has a default value of 3.
      */
     private static int RETRIEVABLE_MESSAGE_AMOUNT = 3;
 
     /**
-     * The main HashMap that contains the {@link Member}s and their {@link Message}'s when the
+     * A {@link HashMap} that contains the {@link Member}s and their respective {@link Message}'s when the
      * '/times MM/dd/yy' command is used.
      */
     private HashMap<Member, List<Message>> tracker = new HashMap<>();
 
+    /**
+     * A {@link HashMap} that contains the {@link Member}'s invalid clock ins/outs. Used in
+     * {@link #logInvalidsToConsole(Member)}.
+     */
+    private HashMap<Member, List<Message>> invalidClocks = new HashMap<>();
+
+    /**
+     * A {@link HashMap} that contains the {@link Member}'s single clock ins/outs. Used in
+     * {@link #logSinglesToConsole(Member)}.
+     */
+    private HashMap<Member, List<Message>> singleClocks = new HashMap<>();
+
+    /**
+     * Global variable for the start date of the two week pay period. Gets set with {@link #setStartDate(String)}.
+     */
     private Date twoWeekStartDate = new Date();
+
+    /**
+     * Global variable for the end date of the two week pay period. Gets set with {@link #setEndDate(Date)}.
+     */
     private Date twoWeekEndDate = new Date();
 
     /**
@@ -216,9 +236,8 @@ public class TimeTracker extends ListenerAdapter {
     } // End of onGuildMessageReceived()
 
     /**
-     * Method that is called when the command '/times MM/dd/yy' is used.
-     * Gets the {@link TextChannel}'s members and their messages from
-     * the channel the command was entered from and adds them to {@link #tracker}.
+     * Method that is called when the command '/times MM/dd/yy' is used. Gets the {@link TextChannel}'s members and
+     * their messages from the channel the command was entered from and adds them to {@link #tracker}.
      * Also produces the twoWeekStartDate and twoWeekEndDate from the 'MM/dd/yy' parameter.
      * Finally, it calls {@link #sendMemberInfo(User, TextChannel, Member, List)} to send the user
      * of the command the requested info.
@@ -235,11 +254,14 @@ public class TimeTracker extends ListenerAdapter {
                 addMemberInfoToTracker(m, channelMessages);
 
         // Get dates to check clock in and out messages.
-        twoWeekStartDate = getStartDate(dateAsString);
-        twoWeekEndDate = getEndDate(twoWeekStartDate);
+        twoWeekStartDate = setStartDate(dateAsString);
+        twoWeekEndDate = setEndDate(twoWeekStartDate);
 
         // Get messages only from within the two weeks.
         trimTrackerMessagesFromDates(twoWeekStartDate, twoWeekEndDate);
+
+        // Spacing for Console logs.
+        System.out.println("\n--------------------\n");
 
         // Send messages and times to cmdUser.
         for(Map.Entry<Member, List<Message>> entry : tracker.entrySet()) {
@@ -264,7 +286,7 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * Adds all members and their respective messages to {@link #tracker}. Messages added are ones that only contain
-     * words from {@link #CLOCK_IN_WORDS} & {@link #CLOCK_OUT_WORDS}.
+     * words from {@link #CLOCK_IN_WORDS} and {@link #CLOCK_OUT_WORDS}.
      *
      * @param member The member who's messages will be pulled and stored with in {@link #tracker}.
      * @param channelMessages The {@link TextChannel} that contains the member's messages.
@@ -303,12 +325,12 @@ public class TimeTracker extends ListenerAdapter {
     } // End of containsClockWords()
 
     /**
-     * Gets the two week start date based on the dateToStart given.
+     * Sets the two week start date based on the dateToStart given.
      *
      * @param dateToStart Start date as a String.
      * @return The twoWeekStartDate.
      */
-    private Date getStartDate(String dateToStart) {
+    private Date setStartDate(String dateToStart) {
         Date twoWeekStartDate = new Date();
         try {
             twoWeekStartDate = new SimpleDateFormat("MM/dd/yy").parse(dateToStart);
@@ -318,12 +340,12 @@ public class TimeTracker extends ListenerAdapter {
     } // End of getStartDate()
 
     /**
-     * Gets the two week end date based on the two week start date.
+     * Sets the two week end date based on the two week start date.
      *
      * @param twoWeekStartDate The date that the end date is two weeks from.
      * @return The twoWeekEndDate.
      */
-    private Date getEndDate(Date twoWeekStartDate) {
+    private Date setEndDate(Date twoWeekStartDate) {
         Calendar calendar = Calendar.getInstance();
 
         calendar.setTime(twoWeekStartDate);
@@ -386,7 +408,8 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * Sends the private message containing the clock in and out messages of the {@link Member} with the calculated
-     * hours to the '/times MM/dd/yy' command {@link User}.
+     * hours to the '/times MM/dd/yy' command {@link User}. It also calls {@link #logInvalidsToConsole(Member)} and
+     * {@link #logSinglesToConsole(Member)} for the {@link Member}.
      *
      * @param cmdUser The '/times MM/dd/yy' command {@link User}.
      * @param channel The {@link TextChannel} the command was run in.
@@ -404,83 +427,69 @@ public class TimeTracker extends ListenerAdapter {
                         + messageListToString(listOfClocks) + "\n"
                         + sdf.format((twoWeekStartDate)) + " - "
                         + sdf.format(getEndOfWeekOne()) + ": "
-                        + calculateTimeDifferences(clocks.get(1)) + " hours"
+                        + getTimeDifferences(clocks.get(1)) + " hours"
                         + "\n\n"
                         + sdf.format(getStartOfWeekTwo()) + " - "
                         + sdf.format(twoWeekEndDate) + ": "
-                        + calculateTimeDifferences(clocks.get(2)) + " hours"
+                        + getTimeDifferences(clocks.get(2)) + " hours"
                         + "\n\n"
-                        + "Total: " + (calculateTimeDifferences(clocks.get(1)) + calculateTimeDifferences(clocks.get(2)))
+                        + "Total: " + (getTimeDifferences(clocks.get(1)) + getTimeDifferences(clocks.get(2)))
                         + " hours"
         ).queue();
+        if(invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
+            pm.sendMessage(
+                    "Hours calculated may be invalid due to invalid clocks. Check the Console for more info."
+            ).queue();
+            logInvalidsToConsole(member);
+        }
+        if(singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
+            pm.sendMessage(
+                    "Hours calculated may be invalid due to missing clock outs. Check the Console for more info."
+            ).queue();
+            logSinglesToConsole(member);
+        }
+        if(invalidClocks.containsKey(member) || singleClocks.containsKey(member))
+            if(invalidClocks.get(member).size() > 0 || singleClocks.get(member).size() > 0)
+                System.out.println("--------------------\n"); // Spacing for Console logs.
     } // End of sendMemberInfo()
 
-    private double calculateTimeDifferences(List<Message> clocks) {
-        HashMap<Message, Date> timedClocks = getMessagesWithTime(clocks);
-        Calendar calendar = Calendar.getInstance();
-
-        int hours = 0;
-        int minutes = 0;
-
-        for(int i = 0; i < clocks.size()-1; i++) {
-            if(containsClockIn(clocks.get(i)) && !containsClockIn(clocks.get(i+1))) {
-                Message in = clocks.get(i);
-                Message out = clocks.get(i+1);
-
-                calendar.setTime(timedClocks.get(in));
-                int inHour = calendar.get(Calendar.HOUR_OF_DAY);
-                int inMinute = calculateMinutes(calendar.get(Calendar.MINUTE));
-
-                calendar.setTime(timedClocks.get(out));
-                int outHour = calendar.get(Calendar.HOUR_OF_DAY);
-                int outMinute = calculateMinutes(calendar.get(Calendar.MINUTE));
-
-                hours += Math.abs(outHour - inHour);
-                minutes += Math.abs(outMinute - inMinute);
-            }
-        }
-
-
-        return Math.abs(minutes / 100) + hours;
+    /**
+     * Logs the {@link #invalidClocks} to the console.
+     *
+     * @param member The {@link Member} to which the invalid clocks belong to.
+     */
+    private void logInvalidsToConsole(Member member) {
+        System.out.println("Invalid clocks for " + member.getEffectiveName() + ":");
+        for (Message m : invalidClocks.get(member))
+            System.out.println(
+                    "   " + getTimeStamp(m)
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
+            );
+        System.out.println();
     }
-
-    private HashMap<Message, Date> getMessagesWithTime(List<Message> clocks) {
-        HashMap<Message, Date> timedClocks = new HashMap<>();
-        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy hh:mm a");
-        for(Message m : clocks) {
-            int month = m.getCreationTime().getMonthValue();
-            int day = m.getCreationTime().getDayOfMonth();
-            int year = m.getCreationTime().getYear();
-            String time = m.getContent().substring(m.getContent().length()-8);
-            try {
-                timedClocks.put(m, sdf.parse(month + "/" + day + "/" + year + " " + time));
-            } catch (Exception e) {System.out.println("Unable to get time for: " + m.getContent());}
-        }
-        return timedClocks;
-    }
-
-//    private HashMap<String, HashMap<LocalDate, Message>> hashClocks(List<Message> clocks) {
-//        HashMap<String, HashMap<LocalDate, Message>> hashedClocks = new HashMap<>();
-//        HashMap<LocalDate, Message> clockIns = new HashMap<>();
-//        HashMap<LocalDate, Message> clockOuts = new HashMap<>();
-//
-//        for(Message m : clocks)
-//            if(containsClockIn(m))
-//                clockIns.put(m.getCreationTime().toLocalDate(), m);
-//            else
-//                clockOuts.put(m.getCreationTime().toLocalDate(), m);
-//
-//        hashedClocks.put("Ins", clockIns);
-//        hashedClocks.put("Outs", clockOuts);
-//
-//        return hashedClocks;
-//    }
 
     /**
-     * Splits up the passed in list of {@link Message}s into two weeks based on the message's timestamp.
+     * Logs the {@link #singleClocks} to the console.
+     *
+     * @param member The {@link Member} to which the single clocks belong to.
+     */
+    private void logSinglesToConsole(Member member) {
+        System.out.println(
+                "Clocks missing outs for " + member.getEffectiveName() + " (each corresponding out could be an invalid clock):"
+        );
+        for (Message m : singleClocks.get(member))
+            System.out.println(
+                    "   " + getTimeStamp(m)
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
+            );
+        System.out.println();
+    }
+
+    /**
+     * Splits up the passed in {@link List} of {@link Message}s into two weeks based on the message's timestamp.
      * HashMap's Integer = Week Number
      *
-     * @param clocks List of passed in {@link Message}s.
+     * @param clocks {@link List} of passed in {@link Message}s.
      * @return HashMap of {@link Message}s with the key being the week.
      */
     private HashMap<Integer, List<Message>> splitWeeks(List<Message> clocks) {
@@ -502,6 +511,87 @@ public class TimeTracker extends ListenerAdapter {
     }
 
     /**
+     * Gets the time differences between in and out clocks from the {@link List} of {@link DiscordClock}s received
+     * from {@link #createDiscordClocks(List)} after passing in the {@link List} of {@link Message}s (param clocks).
+     * Also adds single clocks to {@link #singleClocks} (a clock-in missing a clock-out) for future logging with
+     * {@link #logSinglesToConsole(Member)}.
+     *
+     * @param clocks {@link List} of {@link Message}s that contains the clock ins/outs from Discord.
+     * @return The calculated hours between the passed in clocks.
+     */
+    private double getTimeDifferences(List<Message> clocks) {
+        Member authorOfClocks = null;
+        if(clocks.size() > 0)
+            authorOfClocks = clocks.get(0).getGuild().getMember(clocks.get(0).getMentionedUsers().get(0));
+        List<Message> singles = new ArrayList<>();
+
+        List<DiscordClock> dClocks = createDiscordClocks(clocks);
+        double total = 0;
+
+        for(int i = 0; i < dClocks.size() - 1; i++) {
+            DiscordClock in, out;
+            if(dClocks.get(i).getType().equalsIgnoreCase("In")) {
+                if (dClocks.get(i + 1).getType().equalsIgnoreCase("Out")) {
+                    in = dClocks.get(i);
+                    out = dClocks.get(i + 1);
+                    total += out.getTime() - in.getTime();
+                }
+                else
+                    singles.add(dClocks.get(i).getMessage());
+            }
+        }
+
+        // Last message is not checked in for loop above.
+        if(dClocks.size() > 0 && containsClockIn(dClocks.get(dClocks.size() - 1).getMessage()))
+            singles.add(dClocks.get(dClocks.size() - 1).getMessage());
+
+        if(authorOfClocks != null)
+            singleClocks.put(authorOfClocks, singles);
+
+        return total;
+    }
+
+    /**
+     * Creates a {@link List} of {@link DiscordClock}s from the {@link List} of {@link Message}s passed in. It also adds
+     * invalid clock ins/outs to {@link #invalidClocks} for future logging with {@link #logInvalidsToConsole(Member)}.
+     *
+     * @param clocks {@link List} of {@link Message}s that contains the clock ins/outs from Discord.
+     * @return A {@link List} of {@link DiscordClock}s to be used for time calculations in {@link #getTimeDifferences(List)}.
+     */
+    private List<DiscordClock> createDiscordClocks(List<Message> clocks) {
+        Member authorOfClocks = null;
+        if(clocks.size() > 0)
+            authorOfClocks = clocks.get(0).getGuild().getMember(clocks.get(0).getMentionedUsers().get(0));
+        List<Message> invalidClockMessages = new ArrayList<>();
+        List<DiscordClock> dClocks = new ArrayList<>();
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy hh:mm a");
+
+        for(Message message : clocks) {
+            int month = message.getCreationTime().getMonthValue();
+            int day = message.getCreationTime().getDayOfMonth();
+            int year = message.getCreationTime().getYear();
+            String time = message.getContent().substring(message.getContent().length()-8);
+            try {
+                String type;
+                if(containsClockIn(message))
+                    type = "In";
+                else
+                    type = "Out";
+
+                Date timestamp = sdf.parse(month + "/" + day + "/" + year + " " + time);
+
+                dClocks.add(new DiscordClock(type, message, timestamp));
+
+            } catch (Exception e) { invalidClockMessages.add(message); }
+        }
+
+        if(authorOfClocks != null)
+            invalidClocks.put(authorOfClocks, invalidClockMessages);
+
+        return dClocks;
+    }
+
+    /**
      * Check if the date passed in is from the first week based on the {@link #twoWeekStartDate}.
      *
      * @param toCheck Date to be checked.
@@ -515,6 +605,11 @@ public class TimeTracker extends ListenerAdapter {
         return isBetweenDates(twoWeekStartDate, calendar.getTime(), toCheck);
     } // End of isWeekOne()
 
+    /**
+     * Gets the end {@link Date} of week one of the pay period.
+     *
+     * @return The end {@link Date} of week one.
+     */
     private Date getEndOfWeekOne() {
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(twoWeekStartDate);
@@ -523,6 +618,11 @@ public class TimeTracker extends ListenerAdapter {
         return calendar.getTime();
     } // End of getEndOfWeekOne()
 
+    /**
+     * Gets the start date of week two of the pay period for message formatting.
+     *
+     * @return The start {@link Date} of week two.
+     */
     private Date getStartOfWeekTwo() {
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(twoWeekStartDate);
@@ -547,19 +647,17 @@ public class TimeTracker extends ListenerAdapter {
     } // End of containsClockIn()
 
     /**
-     * Converts a list of {@link Message}s into a single String.
+     * Converts a {@link List} of {@link Message}s into a single String.
      *
-     * @param list The list of {@link Message}s.
-     * @return The list of {@link Message}s as a String. ("N/A" if there were no messages.)
+     * @param list The {@link List} of {@link Message}s.
+     * @return The {@link List} of {@link Message}s as a String. ("N/A" if there were no messages.)
      */
     private String messageListToString(List<Message> list) {
         Collections.reverse(list); // Reverse the order of messages -> oldest to newest.
 
         String str = "";
-        for(Message m : list) {
-            str += getTimeStamp(m.getCreationTime().atZoneSameInstant(timeZone).toLocalDateTime())
-                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n";
-        }
+        for(Message m : list)
+            str += getTimeStamp(m) + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n";
 
         if(str.length() < 1) // No messages between the start and end date.
             return "N/A";
@@ -583,88 +681,15 @@ public class TimeTracker extends ListenerAdapter {
     } // end of getEffectiveNameOfUser()
 
     /**
-     * Formats {@link LocalDateTime}s using {@link #TIMESTAMP} as the pattern. {@link #TIMESTAMP} is initialized via the
-     * bot.properties file.
+     * Formats the {@link Message}'s timestamp using {@link #TIMESTAMP} as the pattern. {@link #TIMESTAMP} is
+     * initialized via the bot.properties file.
      *
-     * @param ldt {@link LocalDateTime} being passed in.
+     * @param message {@link Message} being passed in.
      * @return A string value of the ldt in the format of {@link #TIMESTAMP}.
      */
-    private String getTimeStamp(Temporal ldt) {
+    private String getTimeStamp(Message message) {
+        Temporal ldt = message.getCreationTime().atZoneSameInstant(timeZone).toLocalDateTime();
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern(TIMESTAMP);
         return fmt.format(ldt);
     } // End of getTimeStamp()
-
-    /**
-     * Used to convert minutes into quarter hours in decimal format.
-     * Typically used after {@link #calculateMinutes(int)}.
-     *
-     * @param minutes Minutes to be converted into a quarter hour as a decimal.
-     * @return Minutes in the form of a quarter hour as a decimal amount. (0, 25, 5, 75)
-     */
-    private int convertMinutes(int minutes) {
-        if(minutes == 15)
-            return 25;
-        else if(minutes == 30)
-            return 5;
-        else if(minutes == 45)
-            return 75;
-        else
-            return 0;
-    } // End of convertMinutes()
-
-    /**
-     * Calculates the quarter hour based on the minutes given.
-     *
-     * @param minutes Minutes to be converted into a quarter hour amount.
-     * @return Minutes in the form of a quarter hour. (0, 15, 30, 45)
-     */
-    private int calculateMinutes(int minutes) {
-        int tens = minutes / 10;
-        int ones = minutes % 10;
-
-        switch (tens){
-            case 0:
-                if (ones <= 7) {
-                    ones = 0;
-                } else {
-                    tens++;
-                    ones = 5;
-                }
-                break;
-            case 1:
-                ones = 5;
-                break;
-            case 2:
-                if (ones <= 3) {
-                    tens--;
-                    ones = 5;
-                } else {
-                    tens++;
-                    ones = 0;
-                }
-                break;
-            case 3:
-                if (ones <= 7) {
-                    ones = 0;
-                } else {
-                    tens++;
-                    ones = 5;
-                }
-                break;
-            case 4:
-                ones = 5;
-                break;
-            case 5:
-                if (ones <= 3) {
-                    tens--;
-                    ones = 5;
-                } else {
-                    tens = 0;
-                    ones = 0;
-                }
-                break;
-        }
-
-        return (tens * 10) + ones;
-    } // End of calculateMinutes()
 }
