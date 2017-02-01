@@ -1,6 +1,7 @@
 import net.dv8tion.jda.core.AccountType;
 import net.dv8tion.jda.core.JDABuilder;
 import net.dv8tion.jda.core.MessageHistory;
+import net.dv8tion.jda.core.Permission;
 import net.dv8tion.jda.core.entities.*;
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent;
 import net.dv8tion.jda.core.events.message.priv.PrivateMessageReceivedEvent;
@@ -197,13 +198,15 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * Handles the command input via a guild {@link TextChannel} that the bot is a part of. Commands:<br>
-     * /times MM/dd/yy<br> (Gets clock ins/outs and the total hours for each member.)
-     * /clocks @{@link User} MM/dd/yy<br> (Gets the clock ins/outs for the specified {@link User}.)
+     * /times MM/dd/yy (Gets clock ins/outs and the total hours for each member. Admin use only.)<br>
+     * /clocks @{@link User} MM/dd/yy (Gets the clock ins/outs for the specified {@link User}. Open use.)<br>
      *
      * @param event Event that holds the {@link User}, {@link TextChannel}, and command info.
      */
     @Override
     public void onGuildMessageReceived(GuildMessageReceivedEvent event) {
+        checkForCorrectClock(event);
+
         if(event.getAuthor().isBot() || !event.getMessage().getContent().startsWith("/"))
             return;
 
@@ -212,6 +215,7 @@ public class TimeTracker extends ListenerAdapter {
         String[] parts = commandline.split(" ");
         String command = parts[0];
 
+        // Handles commands.
         switch (command.toLowerCase()) {
             case "/times":
                 if(parts.length < 2 || !parts[1].contains("/")){
@@ -230,7 +234,13 @@ public class TimeTracker extends ListenerAdapter {
                     }
                 }
                 event.getMessage().deleteMessage().queue();
-                getTimes(event.getAuthor(), event.getChannel(), parts[1]);
+                if(event.getGuild().getMember(event.getAuthor()).hasPermission(Permission.ADMINISTRATOR))
+                    getTimes(event.getAuthor(), event.getChannel(), parts[1]);
+                else
+                    try {
+                        PrivateChannel pm = event.getAuthor().openPrivateChannel().complete();
+                        pm.sendMessage("You don't have permission to use that command!").queue();
+                    } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
                 break;
             case "/clocks":
                 if(parts.length < 3){
@@ -257,6 +267,48 @@ public class TimeTracker extends ListenerAdapter {
                 );
         }
     } // End of onGuildMessageReceived()
+
+    /**
+     * Notifies the user typing a clock in/out if they have typed the clock wrong.
+     *
+     * @param event The user typing a message, and the bot receiving it.
+     */
+    private void checkForCorrectClock(GuildMessageReceivedEvent event) {
+        boolean sendMessage = false;
+        Message message = event.getMessage();
+        String content = message.getContent();
+        switch(message.getMentionedUsers().size()) {
+            case 0:
+                return;
+            case 1:
+                if(content.contains(":")) {
+                    String firsTimeNum = content.substring(content.indexOf(":") - 2, content.indexOf(":") - 1);
+                    String beforeMeridian = "";
+                    if(content.toLowerCase().contains("am"))
+                        beforeMeridian = content.substring(
+                                content.toLowerCase().indexOf("am") - 1,
+                                content.toLowerCase().indexOf("am")
+                        );
+                    else if(content.toLowerCase().contains("pm"))
+                        beforeMeridian = content.substring(
+                                content.toLowerCase().indexOf("pm") - 1,
+                                content.toLowerCase().indexOf("pm")
+                        );
+
+                    if(firsTimeNum.equals(" ") || !firsTimeNum.matches("[0-9]+"))
+                        sendMessage = true;
+                    if(!beforeMeridian.equals(" "))
+                        sendMessage = true;
+                }
+        }
+        if(sendMessage){
+            PrivateChannel pm = event.getAuthor().openPrivateChannel().complete();
+            pm.sendMessage(
+                    "That clock in/out may be incorrect! Please check that it is in the format:\n"
+                    + "@Name is in/out at XX:XX AM/PM"
+            ).queue();
+        }
+    } // End of checkForCorrectClock()
 
     /**
      * Method that is called when the command '/times MM/dd/yy' is used. Gets the {@link TextChannel}'s members and
@@ -324,13 +376,14 @@ public class TimeTracker extends ListenerAdapter {
         userClocks.removeAll(toRemove);
 
         // Send the command user the messages.
-        PrivateChannel pm = cmdUser.openPrivateChannel().complete();
-        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
-        pm.sendMessage(
-                "__**" + getEffectiveNameOfUser(channel.getGuild(), user) + "** (" + channel.getName() + "):__\n\n"
-                + messageListToString(userClocks) + "\n"
-        ).queue();
-    }
+        try {
+            PrivateChannel pm = cmdUser.openPrivateChannel().complete();
+            pm.sendMessage(
+                    "__**" + getEffectiveNameOfUser(channel.getGuild(), user) + "** (" + channel.getName() + "):__\n\n"
+                            + messageListToString(userClocks) + "\n"
+            ).queue();
+        } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
+    } // End of getClocks()
 
     /**
      * Gets the channel's message history up to the number of messages specified by the
@@ -483,33 +536,35 @@ public class TimeTracker extends ListenerAdapter {
         Collections.reverse(clocks.get(1));
         Collections.reverse(clocks.get(2));
 
-        PrivateChannel pm = cmdUser.openPrivateChannel().complete();
-        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
-        pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__\n\n"
-                        + messageListToString(listOfClocks) + "\n"
-                        + sdf.format((twoWeekStartDate)) + " - "
-                        + sdf.format(getEndOfWeekOne()) + ": "
-                        + getTimeDifferences(clocks.get(1)) + " hours"
-                        + "\n\n"
-                        + sdf.format(getStartOfWeekTwo()) + " - "
-                        + sdf.format(twoWeekEndDate) + ": "
-                        + getTimeDifferences(clocks.get(2)) + " hours"
-                        + "\n\n"
-                        + "Total: " + (getTimeDifferences(clocks.get(1)) + getTimeDifferences(clocks.get(2)))
-                        + " hours"
-        ).queue();
-        if(invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
-            pm.sendMessage(
-                    "Hours calculated may be invalid due to invalid clocks. Check the Console for more info."
+        try {
+            PrivateChannel pm = cmdUser.openPrivateChannel().complete();
+            SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
+            pm.sendMessage("__**" + member.getEffectiveName() + "** (" + channel.getName() + "):__\n\n"
+                    + messageListToString(listOfClocks) + "\n"
+                    + sdf.format((twoWeekStartDate)) + " - "
+                    + sdf.format(getEndOfWeekOne()) + ": "
+                    + getTimeDifferences(clocks.get(1)) + " hours"
+                    + "\n\n"
+                    + sdf.format(getStartOfWeekTwo()) + " - "
+                    + sdf.format(twoWeekEndDate) + ": "
+                    + getTimeDifferences(clocks.get(2)) + " hours"
+                    + "\n\n"
+                    + "Total: " + (getTimeDifferences(clocks.get(1)) + getTimeDifferences(clocks.get(2)))
+                    + " hours"
             ).queue();
-            logInvalidsToConsole(member);
-        }
-        if(singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
-            pm.sendMessage(
-                    "Hours calculated may be invalid due to missing clock outs. Check the Console for more info."
-            ).queue();
-            logSinglesToConsole(member);
-        }
+            if (invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
+                pm.sendMessage(
+                        "Hours calculated may be invalid due to invalid clocks. Check the Console for more info."
+                ).queue();
+                logInvalidsToConsole(member);
+            }
+            if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
+                pm.sendMessage(
+                        "Hours calculated may be invalid due to missing clock outs. Check the Console for more info."
+                ).queue();
+                logSinglesToConsole(member);
+            }
+        } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
         if(invalidClocks.containsKey(member) || singleClocks.containsKey(member))
             if(invalidClocks.get(member).size() > 0 || singleClocks.get(member).size() > 0)
                 System.out.println("--------------------\n"); // Spacing for Console logs.
@@ -528,7 +583,7 @@ public class TimeTracker extends ListenerAdapter {
                     + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
             );
         System.out.println();
-    }
+    } // End of logInvalidsToConsole()
 
     /**
      * Logs the {@link #singleClocks} to the console.
@@ -545,7 +600,7 @@ public class TimeTracker extends ListenerAdapter {
                     + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
             );
         System.out.println();
-    }
+    } // End of logSinglesToConsole()
 
     /**
      * Splits up the passed in {@link List} of {@link Message}s into two weeks based on the message's timestamp.
@@ -570,7 +625,7 @@ public class TimeTracker extends ListenerAdapter {
         sortedClocks.put(2, weekTwoMessages);
 
         return sortedClocks;
-    }
+    } // End of splitWeeks()
 
     /**
      * Gets the time differences between in and out clocks from the {@link List} of {@link DiscordClock}s received
@@ -611,7 +666,7 @@ public class TimeTracker extends ListenerAdapter {
             singleClocks.put(authorOfClocks, singles);
 
         return total;
-    }
+    } // End of getTimeDifferences()
 
     /**
      * Creates a {@link List} of {@link DiscordClock}s from the {@link List} of {@link Message}s passed in. It also adds
@@ -651,7 +706,7 @@ public class TimeTracker extends ListenerAdapter {
             invalidClocks.put(authorOfClocks, invalidClockMessages);
 
         return dClocks;
-    }
+    } // End of createDiscordClocks()
 
     /**
      * Check if the date passed in is from the first week based on the {@link #twoWeekStartDate}.
