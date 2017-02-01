@@ -71,6 +71,11 @@ public class TimeTracker extends ListenerAdapter {
     private static int RETRIEVABLE_MESSAGE_AMOUNT = 3;
 
     /**
+     * Variable that holds the URL where the log is displayed.
+     */
+    private static String logURL = "";
+
+    /**
      * A {@link HashMap} that contains the {@link Member}s and their respective {@link Message}'s when the
      * '/times MM/dd/yy' command is used.
      */
@@ -142,8 +147,12 @@ public class TimeTracker extends ListenerAdapter {
             }
 
             properties = br.readLine();
-            if (properties != null)
+            if(properties != null)
                 RETRIEVABLE_MESSAGE_AMOUNT = Integer.parseInt(properties);
+
+            properties = br.readLine();
+            if(properties != null)
+                logURL = properties;
 
             br.close();
 
@@ -559,20 +568,20 @@ public class TimeTracker extends ListenerAdapter {
             ).queue();
             if (invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to invalid clocks. Check the Console for more info."
+                        "Hours calculated may be invalid due to invalid clocks. Check " + logURL + " for more info."
                 ).queue();
                 logInvalidsToFile(member);
             }
             if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to missing clock outs. Check the Console for more info."
+                        "Hours calculated may be invalid due to missing clock outs. Check " + logURL + " for more info."
                 ).queue();
                 logSinglesToFile(member);
             }
             if(invalidClocks.containsKey(member) || singleClocks.containsKey(member))
                 if(invalidClocks.get(member).size() > 0 || singleClocks.get(member).size() > 0)
                     try {
-                        Files.write(Paths.get("./log.txt"), "--------------------\n\n".getBytes(), StandardOpenOption.APPEND);
+                        Files.write(Paths.get("./log.txt"), "\n\n--------------------\n\n".getBytes(), StandardOpenOption.APPEND);
                     } catch (Exception e) {e.printStackTrace();}
         } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
     } // End of sendMemberInfo()
@@ -583,11 +592,11 @@ public class TimeTracker extends ListenerAdapter {
      * @param member The {@link Member} to which the invalid clocks belong to.
      */
     private void logInvalidsToFile(Member member) {
-        String content = "Invalid clocks for " + member.getEffectiveName() + ":\n";
-        for (Message m : singleClocks.get(member))
+        String content = "<h3>Invalid clocks for " + member.getEffectiveName() + ":</h3>";
+        for (Message m : invalidClocks.get(member))
             content +=
                     "   " + getTimeStamp(m)
-                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n\n"
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n"
             ;
         try {
             Files.write(Paths.get("./log.txt"), content.getBytes(), StandardOpenOption.APPEND);
@@ -601,13 +610,13 @@ public class TimeTracker extends ListenerAdapter {
      */
     private void logSinglesToFile(Member member) {
         String content =
-                "Single clocks for " + member.getEffectiveName()
-                + " (each corresponding in/out could be an invalid clock):\n"
+                "<h3>Single clocks for " + member.getEffectiveName()
+                + " (each corresponding in/out could be an invalid clock):</h3>"
         ;
         for (Message m : singleClocks.get(member))
             content +=
                     "   " + getTimeStamp(m)
-                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n\n"
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n"
             ;
         try {
             Files.write(Paths.get("./log.txt"), content.getBytes(), StandardOpenOption.APPEND);
