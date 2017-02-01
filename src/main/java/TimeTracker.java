@@ -196,7 +196,9 @@ public class TimeTracker extends ListenerAdapter {
     } // End of onPrivateMessageReceived()
 
     /**
-     * Handles the command input via a guild {@link TextChannel} that the bot is a part of.
+     * Handles the command input via a guild {@link TextChannel} that the bot is a part of. Commands:<br>
+     * /times MM/dd/yy<br> (Gets clock ins/outs and the total hours for each member.)
+     * /clocks @{@link User} MM/dd/yy<br> (Gets the clock ins/outs for the specified {@link User}.)
      *
      * @param event Event that holds the {@link User}, {@link TextChannel}, and command info.
      */
@@ -208,9 +210,6 @@ public class TimeTracker extends ListenerAdapter {
         // Split the message into command and parameters.
         String commandline = event.getMessage().getContent();
         String[] parts = commandline.split(" ");
-        String dateAsString = "";
-        if(parts.length > 1)
-            dateAsString = parts[1];
         String command = parts[0];
 
         switch (command.toLowerCase()) {
@@ -231,7 +230,31 @@ public class TimeTracker extends ListenerAdapter {
                     }
                 }
                 event.getMessage().deleteMessage().queue();
-                getTimes(event.getAuthor(), event.getChannel(), dateAsString);
+                getTimes(event.getAuthor(), event.getChannel(), parts[1]);
+                break;
+            case "/clocks":
+                if(parts.length < 3){
+                    event.getAuthor().getPrivateChannel().sendMessage("Usage: /clocks @Name mm/dd/yy").queue();
+                    event.getMessage().deleteMessage().queue();
+                    return;
+                }
+                else if(parts[1].contains("/")){
+                    String[] numbers = parts[parts.length - 1].split("/");
+                    for(String s : numbers) {
+                        System.out.println(s);
+                        if (numbers.length < 3 || !s.matches("[0-9]+")) {
+                            event.getAuthor().getPrivateChannel().sendMessage("Usage: /clocks @Name mm/dd/yy").queue();
+                            event.getMessage().deleteMessage().queue();
+                            return;
+                        }
+                    }
+                }
+                event.getMessage().deleteMessage().queue();
+                getClocks(
+                        event.getAuthor(),
+                        event.getChannel(),
+                        event.getMessage().getMentionedUsers().get(0), parts[parts.length - 1]
+                );
         }
     } // End of onGuildMessageReceived()
 
@@ -242,8 +265,8 @@ public class TimeTracker extends ListenerAdapter {
      * Finally, it calls {@link #sendMemberInfo(User, TextChannel, Member, List)} to send the user
      * of the command the requested info.
      *
-     * @param cmdUser User of the '/times MM/dd/yy' command.
-     * @param channel The {@link TextChannel} the '/times MM/dd/yy' command was used in.
+     * @param cmdUser The {@link User} that entered the command.
+     * @param channel The {@link TextChannel} from which the messages are being pulled from.
      * @param dateAsString The 'MM/dd/yy' parameter given from the '/times MM/dd/yy' command.
      */
     private void getTimes(User cmdUser, TextChannel channel, String dateAsString) {
@@ -264,11 +287,50 @@ public class TimeTracker extends ListenerAdapter {
         System.out.println("\n--------------------\n");
 
         // Send messages and times to cmdUser.
+        PrivateChannel cmdUserPvt = cmdUser.openPrivateChannel().complete();
         for(Map.Entry<Member, List<Message>> entry : tracker.entrySet()) {
             sendMemberInfo(cmdUser, channel, entry.getKey(), entry.getValue());
-            cmdUser.getPrivateChannel().sendMessage("--------------------").queue();
+            cmdUserPvt.sendMessage("--------------------").queue();
         }
     } // End of getTimes()
+
+    /**
+     * Method that is called when the command '/clocks @{@link User} MM/dd/yy' is used. Gets the {@link User}'s
+     * {@link Message}}s up to two weeks from the entered date. {@link Message}s are then sent to the command user.
+     *
+     * @param cmdUser The {@link User} that entered the command.
+     * @param channel The {@link TextChannel} from which the messages are being pulled from.
+     * @param user The {@link User} who's messages are being pulled.
+     * @param dateAsString The 'MM/dd/yy' parameter given from the '/clocks @{@link User} MM/dd/yy' command.
+     */
+    private void getClocks(User cmdUser, TextChannel channel, User user, String dateAsString) {
+        List<Message> channelMessages = getChannelMessageHistory(channel);
+        List<Message> userClocks = new ArrayList<>();
+
+        // Get all messages that correspond to the passed in user.
+        for(Message m : channelMessages)
+            if(m.getMentionedUsers().contains(user))
+                userClocks.add(m);
+
+        // Get dates to check clock in and out messages.
+        twoWeekStartDate = setStartDate(dateAsString);
+        twoWeekEndDate = setEndDate(twoWeekStartDate);
+
+        // Remove messages not between the given dates.
+        List<Message> toRemove = new ArrayList<>();
+        for(Message m : userClocks)
+            if(!isBetweenDates(twoWeekStartDate, twoWeekEndDate, convertLocalDate(m.getCreationTime().toLocalDate())))
+                toRemove.add(m);
+        userClocks.removeAll(toRemove);
+
+        // Send the command user the messages.
+        PrivateChannel pm = cmdUser.openPrivateChannel().complete();
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy (E)");
+        pm.sendMessage(
+                "__**" + getEffectiveNameOfUser(channel.getGuild(), user) + "** (" + channel.getName() + "):__\n\n"
+                + messageListToString(userClocks) + "\n"
+        ).queue();
+    }
 
     /**
      * Gets the channel's message history up to the number of messages specified by the
