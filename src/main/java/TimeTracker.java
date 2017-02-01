@@ -10,6 +10,9 @@ import net.dv8tion.jda.core.hooks.ListenerAdapter;
 
 import javax.security.auth.login.LoginException;
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -75,13 +78,13 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * A {@link HashMap} that contains the {@link Member}'s invalid clock ins/outs. Used in
-     * {@link #logInvalidsToConsole(Member)}.
+     * {@link #logInvalidsToFile(Member)}.
      */
     private HashMap<Member, List<Message>> invalidClocks = new HashMap<>();
 
     /**
      * A {@link HashMap} that contains the {@link Member}'s single clock ins/outs. Used in
-     * {@link #logSinglesToConsole(Member)}.
+     * {@link #logSinglesToFile(Member)}.
      */
     private HashMap<Member, List<Message>> singleClocks = new HashMap<>();
 
@@ -335,8 +338,10 @@ public class TimeTracker extends ListenerAdapter {
         // Get messages only from within the two weeks.
         trimTrackerMessagesFromDates(twoWeekStartDate, twoWeekEndDate);
 
-        // Spacing for Console logs.
-        System.out.println("\n--------------------\n");
+        // Wipe the log file for fresh command.
+        try {
+            Files.write(Paths.get("./log.txt"), "".getBytes());
+        } catch (Exception e) {e.printStackTrace();}
 
         // Send messages and times to cmdUser.
         PrivateChannel cmdUserPvt = cmdUser.openPrivateChannel().complete();
@@ -523,8 +528,8 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * Sends the private message containing the clock in and out messages of the {@link Member} with the calculated
-     * hours to the '/times MM/dd/yy' command {@link User}. It also calls {@link #logInvalidsToConsole(Member)} and
-     * {@link #logSinglesToConsole(Member)} for the {@link Member}.
+     * hours to the '/times MM/dd/yy' command {@link User}. It also calls {@link #logInvalidsToFile(Member)} and
+     * {@link #logSinglesToFile(Member)} for the {@link Member}.
      *
      * @param cmdUser The '/times MM/dd/yy' command {@link User}.
      * @param channel The {@link TextChannel} the command was run in.
@@ -556,51 +561,58 @@ public class TimeTracker extends ListenerAdapter {
                 pm.sendMessage(
                         "Hours calculated may be invalid due to invalid clocks. Check the Console for more info."
                 ).queue();
-                logInvalidsToConsole(member);
+                logInvalidsToFile(member);
             }
             if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
                 pm.sendMessage(
                         "Hours calculated may be invalid due to missing clock outs. Check the Console for more info."
                 ).queue();
-                logSinglesToConsole(member);
+                logSinglesToFile(member);
             }
+            if(invalidClocks.containsKey(member) || singleClocks.containsKey(member))
+                if(invalidClocks.get(member).size() > 0 || singleClocks.get(member).size() > 0)
+                    try {
+                        Files.write(Paths.get("./log.txt"), "--------------------\n\n".getBytes(), StandardOpenOption.APPEND);
+                    } catch (Exception e) {e.printStackTrace();}
         } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
-        if(invalidClocks.containsKey(member) || singleClocks.containsKey(member))
-            if(invalidClocks.get(member).size() > 0 || singleClocks.get(member).size() > 0)
-                System.out.println("--------------------\n"); // Spacing for Console logs.
     } // End of sendMemberInfo()
 
     /**
-     * Logs the {@link #invalidClocks} to the console.
+     * Logs the {@link #invalidClocks} to "./log.txt".
      *
      * @param member The {@link Member} to which the invalid clocks belong to.
      */
-    private void logInvalidsToConsole(Member member) {
-        System.out.println("Invalid clocks for " + member.getEffectiveName() + ":");
-        for (Message m : invalidClocks.get(member))
-            System.out.println(
+    private void logInvalidsToFile(Member member) {
+        String content = "Invalid clocks for " + member.getEffectiveName() + ":\n";
+        for (Message m : singleClocks.get(member))
+            content +=
                     "   " + getTimeStamp(m)
-                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
-            );
-        System.out.println();
-    } // End of logInvalidsToConsole()
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n\n"
+            ;
+        try {
+            Files.write(Paths.get("./log.txt"), content.getBytes(), StandardOpenOption.APPEND);
+        } catch (Exception e) {e.printStackTrace();}
+    } // End of logInvalidsToFile()
 
     /**
-     * Logs the {@link #singleClocks} to the console.
+     * Logs the {@link #singleClocks} to the "./log.txt".
      *
      * @param member The {@link Member} to which the single clocks belong to.
      */
-    private void logSinglesToConsole(Member member) {
-        System.out.println(
-                "Clocks missing outs for " + member.getEffectiveName() + " (each corresponding out could be an invalid clock):"
-        );
+    private void logSinglesToFile(Member member) {
+        String content =
+                "Single clocks for " + member.getEffectiveName()
+                + " (each corresponding in/out could be an invalid clock):\n"
+        ;
         for (Message m : singleClocks.get(member))
-            System.out.println(
+            content +=
                     "   " + getTimeStamp(m)
-                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent()
-            );
-        System.out.println();
-    } // End of logSinglesToConsole()
+                    + getEffectiveNameOfUser(m.getGuild(), m.getAuthor()) + ": " + m.getContent() + "\n\n"
+            ;
+        try {
+            Files.write(Paths.get("./log.txt"), content.getBytes(), StandardOpenOption.APPEND);
+        } catch (Exception e) {e.printStackTrace();}
+    } // End of logSinglesToFile()
 
     /**
      * Splits up the passed in {@link List} of {@link Message}s into two weeks based on the message's timestamp.
@@ -631,7 +643,7 @@ public class TimeTracker extends ListenerAdapter {
      * Gets the time differences between in and out clocks from the {@link List} of {@link DiscordClock}s received
      * from {@link #createDiscordClocks(List)} after passing in the {@link List} of {@link Message}s (param clocks).
      * Also adds single clocks to {@link #singleClocks} (a clock-in missing a clock-out) for future logging with
-     * {@link #logSinglesToConsole(Member)}.
+     * {@link #logSinglesToFile(Member)}.
      *
      * @param clocks {@link List} of {@link Message}s that contains the clock ins/outs from Discord.
      * @return The calculated hours between the passed in clocks.
@@ -670,7 +682,7 @@ public class TimeTracker extends ListenerAdapter {
 
     /**
      * Creates a {@link List} of {@link DiscordClock}s from the {@link List} of {@link Message}s passed in. It also adds
-     * invalid clock ins/outs to {@link #invalidClocks} for future logging with {@link #logInvalidsToConsole(Member)}.
+     * invalid clock ins/outs to {@link #invalidClocks} for future logging with {@link #logInvalidsToFile(Member)}.
      *
      * @param clocks {@link List} of {@link Message}s that contains the clock ins/outs from Discord.
      * @return A {@link List} of {@link DiscordClock}s to be used for time calculations in {@link #getTimeDifferences(List)}.
