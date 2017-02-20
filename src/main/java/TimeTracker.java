@@ -334,6 +334,9 @@ public class TimeTracker extends ListenerAdapter {
      * @param dateAsString The 'MM/dd/yy' parameter given from the '/times MM/dd/yy' command.
      */
     private void getTimes(User cmdUser, TextChannel channel, String dateAsString) {
+        invalidClocks = new HashMap<>();
+        singleClocks = new HashMap<>();
+
         List<Message> channelMessages = getChannelMessageHistory(channel);
 
         for(Member m : channel.getMembers())
@@ -385,7 +388,7 @@ public class TimeTracker extends ListenerAdapter {
         // Remove messages not between the given dates.
         List<Message> toRemove = new ArrayList<>();
         for(Message m : userClocks)
-            if(!isBetweenDates(twoWeekStartDate, twoWeekEndDate, convertLocalDate(m.getCreationTime().toLocalDate())))
+            if(!isBetweenDates(twoWeekStartDate, twoWeekEndDate, getDateFromMessage(m)))
                 toRemove.add(m);
         userClocks.removeAll(toRemove);
 
@@ -495,9 +498,23 @@ public class TimeTracker extends ListenerAdapter {
         for(Map.Entry<Member, List<Message>> entry : tracker.entrySet()) {
             List<Message> removableMessages = new ArrayList<>();
 
-            for(Message m : entry.getValue())
-                if(!isBetweenDates(startDate, endDate, convertLocalDate(m.getCreationTime().toLocalDate())))
+            for(Message m : entry.getValue()) {
+                int mDay = 0;
+                try {
+                    // This value is gotten from the given TIMESTAMP value.
+                    // Default TIMESTAMP given starts with MM/dd/yy.
+                    // This substring value will change based on where the DAY_OF_MONTH value is in TIMESTAMP.
+                    mDay = Integer.parseInt(getTimeStamp(m).substring(3,5));
+                } catch (Exception e) {System.out.println("Error getting month value!");}
+
+                Calendar calendar = Calendar.getInstance();
+                calendar.setTime(startDate);
+
+                int day = calendar.get(Calendar.DAY_OF_MONTH);
+
+                if (mDay < day || !isBetweenDates(startDate, endDate, getDateFromMessage(m)))
                     removableMessages.add(m);
+            }
 
             entry.getValue().removeAll(removableMessages);
         }
@@ -528,12 +545,13 @@ public class TimeTracker extends ListenerAdapter {
     /**
      * Converts a {@link LocalDate} to a {@link Date}.
      *
-     * @param localDate The {@link LocalDate} to be converted.
+     * @param message The {@link Message} used to get the Date.
      * @return The localDate as {@link Date}.
      */
-    private Date convertLocalDate(LocalDate localDate) {
-        return Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
-    } // End of convertLocalDate()
+    private Date getDateFromMessage(Message message) {
+        LocalDate localDate = message.getCreationTime().toLocalDate();
+        return Date.from(localDate.atStartOfDay(timeZone).toInstant());
+    } // End of getDateFromMessage()
 
     /**
      * Sends the private message containing the clock in and out messages of the {@link Member} with the calculated
@@ -574,7 +592,7 @@ public class TimeTracker extends ListenerAdapter {
             }
             if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to missing clock outs. Check " + LOG_URL + " for more info."
+                        "Hours calculated may be invalid due to missing clocks. Check " + LOG_URL + " for more info."
                 ).queue();
                 logSinglesToFile(member);
             }
@@ -636,7 +654,7 @@ public class TimeTracker extends ListenerAdapter {
         List<Message> weekTwoMessages = new ArrayList<>();
 
         for(Message m : clocks) {
-            if(isWeekOne(convertLocalDate(m.getCreationTime().toLocalDate())))
+            if(isWeekOne(getDateFromMessage(m)))
                 weekOneMessages.add(m);
             else
                 weekTwoMessages.add(m);
@@ -677,14 +695,34 @@ public class TimeTracker extends ListenerAdapter {
                 else
                     singles.add(dClocks.get(i).getMessage());
             }
+            else if(dClocks.get(i).getType().equalsIgnoreCase("Out"))
+                if(!dClocks.get(i + 1).getType().equalsIgnoreCase("In"))
+                    singles.add(dClocks.get(i + 1).getMessage());
         }
 
-        // Last message is not checked in for loop above.
+        // Last message is not checked in loop above.
         if(dClocks.size() > 0 && containsClockIn(dClocks.get(dClocks.size() - 1).getMessage()))
             singles.add(dClocks.get(dClocks.size() - 1).getMessage());
 
-        if(authorOfClocks != null)
-            singleClocks.put(authorOfClocks, singles);
+        // If the first message is an out, that means it is missing the in for it. Also not checked in loop above.
+        if(dClocks.size() > 0 && dClocks.get(0).getType().equalsIgnoreCase("Out"))
+            singles.add(dClocks.get(0).getMessage());
+
+        if(authorOfClocks != null) {
+            if(singleClocks.containsKey(authorOfClocks)) {
+                List<Message> adds = singleClocks.get(authorOfClocks);
+                List<Message> newSingles = new ArrayList<>();
+
+                for(Message m : singles)
+                    if(!adds.contains(m))
+                        newSingles.add(m);
+                adds.addAll(newSingles);
+
+                singleClocks.put(authorOfClocks, adds);
+            }
+            else
+                singleClocks.put(authorOfClocks, singles);
+        }
 
         return total;
     } // End of getTimeDifferences()
@@ -708,23 +746,44 @@ public class TimeTracker extends ListenerAdapter {
             int month = message.getCreationTime().getMonthValue();
             int day = message.getCreationTime().getDayOfMonth();
             int year = message.getCreationTime().getYear();
+            // Based on the clock message have "XX:XX XM" at the end.
             String time = message.getContent().substring(message.getContent().length()-8);
-            try {
-                String type;
-                if(containsClockIn(message))
-                    type = "In";
-                else
-                    type = "Out";
 
-                Date timestamp = sdf.parse(month + "/" + day + "/" + year + " " + time);
+            if(!endsWithMeridiem(message))
+                invalidClockMessages.add(message);
+            else {
+                try {
+                    String type;
+                    if (containsClockIn(message))
+                        type = "In";
+                    else
+                        type = "Out";
 
-                dClocks.add(new DiscordClock(type, message, timestamp));
+                    Date timestamp = sdf.parse(month + "/" + day + "/" + year + " " + time);
 
-            } catch (Exception e) { invalidClockMessages.add(message); }
+                    dClocks.add(new DiscordClock(type, message, timestamp));
+
+                } catch (Exception e) {
+                    invalidClockMessages.add(message);
+                }
+            }
         }
 
-        if(authorOfClocks != null)
-            invalidClocks.put(authorOfClocks, invalidClockMessages);
+        if(authorOfClocks != null) {
+            if(invalidClocks.containsKey(authorOfClocks)) {
+                List<Message> adds = invalidClocks.get(authorOfClocks);
+                List<Message> newInvalids = new ArrayList<>();
+
+                for (Message m : invalidClockMessages)
+                    if (!adds.contains(m))
+                        newInvalids.add(m);
+                adds.addAll(newInvalids);
+
+                invalidClocks.put(authorOfClocks, adds);
+            }
+            else
+                invalidClocks.put(authorOfClocks, invalidClockMessages);
+        }
 
         return dClocks;
     } // End of createDiscordClocks()
@@ -830,4 +889,15 @@ public class TimeTracker extends ListenerAdapter {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern(TIMESTAMP);
         return fmt.format(ldt);
     } // End of getTimeStamp()
+
+    /**
+     * Helps validate clocks by checking if the last 3 digits contains a space followed by a meridiem.
+     *
+     * @param message {@link Message} to check.
+     * @return Whether the message contains a meridiem at the end.
+     */
+    private boolean endsWithMeridiem(Message message) {
+        String meridiemCheck = message.getContent().substring(message.getContent().length() - 3);
+        return (meridiemCheck.equalsIgnoreCase(" am") || meridiemCheck.equalsIgnoreCase(" pm"));
+    } // End of endsWithMeridiem()
 }

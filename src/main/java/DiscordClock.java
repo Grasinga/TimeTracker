@@ -54,8 +54,11 @@ class DiscordClock {
         double hour = calendar.get(Calendar.HOUR_OF_DAY);
         double minutes = (calculateQuarterMinutes(calendar.get(Calendar.MINUTE)) / 60.0);
 
-        if(calculateQuarterMinutes(calendar.get(Calendar.MINUTE)) == 60) // Hour needs to increase.
+        // Set minutes to 0 instead of 1 and then increase the hour by one.
+        if(calculateQuarterMinutes(calendar.get(Calendar.MINUTE)) == 60) {
+            minutes = 0.0;
             hour++;
+        }
 
         time =  hour + minutes;
     }
