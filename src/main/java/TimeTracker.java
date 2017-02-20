@@ -307,7 +307,7 @@ public class TimeTracker extends ListenerAdapter {
                                 content.toLowerCase().indexOf("pm")
                         );
 
-                    if(!firsTimeNum.matches("[ 0-9]+"))
+                    if(firsTimeNum.equals(" ") || !firsTimeNum.matches("[0-9]+"))
                         sendMessage = true;
                     if(!beforeMeridian.equals(" "))
                         sendMessage = true;
@@ -317,8 +317,7 @@ public class TimeTracker extends ListenerAdapter {
             PrivateChannel pm = event.getAuthor().openPrivateChannel().complete();
             pm.sendMessage(
                     "That clock in/out may be incorrect! Please check that it is in the format:\n"
-                    + "@Name is in/out at XX:XX AM/PM\n"
-                    + "Leading 0 is not needed; for example 3:15 is fine."
+                    + "@Name is in/out at XX:XX AM/PM"
             ).queue();
         }
     } // End of checkForCorrectClock()
@@ -587,17 +586,13 @@ public class TimeTracker extends ListenerAdapter {
             ).queue();
             if (invalidClocks.containsKey(member) && invalidClocks.get(member).size() > 0) {
                 pm.sendMessage(
-                        "Hours calculated may be invalid due to invalid clock(s). Check " + LOG_URL + " for more info."
+                        "Hours calculated may be invalid due to invalid clocks. Check " + LOG_URL + " for more info."
                 ).queue();
                 logInvalidsToFile(member);
             }
             if (singleClocks.containsKey(member) && singleClocks.get(member).size() > 0) {
                 pm.sendMessage(
-<<<<<<< HEAD
                         "Hours calculated may be invalid due to missing clocks. Check " + LOG_URL + " for more info."
-=======
-                        "Hours calculated may be invalid due to missing clock(s). Check " + LOG_URL + " for more info."
->>>>>>> origin/master
                 ).queue();
                 logSinglesToFile(member);
             }
@@ -606,7 +601,7 @@ public class TimeTracker extends ListenerAdapter {
                     try {
                         Files.write(Paths.get("./log.txt"), "\n\n--------------------\n\n".getBytes(), StandardOpenOption.APPEND);
                     } catch (Exception e) {e.printStackTrace();}
-        } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: "); e.printStackTrace();}
+        } catch (Exception e) {System.out.println("Bot may have been blocked! Cause: " + e.getMessage());}
     } // End of sendMemberInfo()
 
     /**
