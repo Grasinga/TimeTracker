@@ -307,7 +307,7 @@ public class TimeTracker extends ListenerAdapter {
                                 content.toLowerCase().indexOf("pm")
                         );
 
-                    if(!firsTimeNum.matches("[0-9]+"))
+                    if(!firsTimeNum.matches("[ 0-9]+"))
                         sendMessage = true;
                     if(!beforeMeridian.equals(" "))
                         sendMessage = true;
