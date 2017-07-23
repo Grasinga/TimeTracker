@@ -661,8 +661,6 @@ def hours_of_weeks(member):
 
 def calc_week_hours(week_clocks):
     total = 0.0
-    if len(week_clocks) > 0:
-        print(week_clocks[0])
     for clock in week_clocks:
         if 'Out' in clock and 'In' in clock:
             total += (clock['Out'] - clock['In'])
