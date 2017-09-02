@@ -24,7 +24,7 @@ TIMEZONE = None
 TIMESTAMP_FORMAT = None
 CLOCK_IN_WORDS = ['In', 'On', 'Back']
 CLOCK_OUT_WORDS = ['Out', 'Off']
-RETRIEVABLE_MESSAGE_AMOUNT = 300
+RETRIEVABLE_MESSAGE_AMOUNT = 1000
 
 # Used in async functions to get message histories.
 HISTORY = []
@@ -215,6 +215,8 @@ async def on_message(message):
                 )
                 if not len(str_clocks) > 2000:  # Character limit for Discord.
                     await client.send_message(command_user, str_clocks)
+                else:
+                    await split_message(command_user, str_clocks)
             else:
                 await client.delete_message(message)
                 error = 'Usage: /clocks @name mm/dd/yy'
@@ -241,6 +243,8 @@ async def on_message(message):
                     for t in times:
                         if not len(t) > 2000:  # Character limit for Discord.
                             await client.send_message(command_user, t)
+                        else:
+                            await split_message(command_user, t)
                     LOG_FILE.close()
                 else:
                     error = 'Usage: /times mm/dd/yy'
@@ -735,6 +739,20 @@ def format_message(member, message):
         + content[replace_len:]
     )
 
+
+async def split_message(channel, str_message):
+    parts = str_message.split("):")
+    await client.send_message(channel, parts[0] + '):' + parts[1] + '):')
+    if len(parts) > 3:
+        await client.send_message(channel, (parts[2] + '):'))
+        await client.send_message(channel, parts[3])
+    else:
+        await client.send_message(channel, parts[2] + '):')
+
+
 # Get the bot's properties then start it.
 populate_global_properties()
-client.run(BOT_TOKEN)
+try:
+    client.run(BOT_TOKEN)
+except ConnectionResetError:
+    pass
