@@ -259,7 +259,7 @@ class DiscordClock:
 @BOT.event
 async def on_ready():
     print('Successfully logged in as:', str(BOT.user)[:-5])
-    print('Using ' + BOT_NAME + ' as bot name.')
+    print('Using ' + BOT_NAME + " as the bot's name.")
     print('Current time: ' + time.strftime('%x %X %Z'))
 
 
@@ -286,10 +286,6 @@ async def on_message(message):
         except AttributeError:
             # Don't add reactions if the message isn't a Discord Clock.
             pass
-
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
-    INVALID_CLOCKS = {}
 
     # Needed for any @BOT.command() methods to work.
     await BOT.process_commands(message)
@@ -328,6 +324,11 @@ async def on_message_edit(before, after):
 
 @BOT.command(pass_context=True)
 async def clocks(ctx):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
     command = ctx.message
     command_user = command.author
     if valid_clocks_command(command):
@@ -370,6 +371,11 @@ async def clocks(ctx):
 
 @BOT.command(pass_context=True)
 async def emclocks(ctx):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
     command = ctx.message
     command_user = command.author
     if valid_clocks_command(command):
@@ -415,6 +421,11 @@ async def emclocks(ctx):
 
 @BOT.command(pass_context=True)
 async def times(ctx):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
     command = ctx.message
     command_user = command.author
     if valid_times_command(command):
@@ -480,6 +491,11 @@ async def times(ctx):
 
 @BOT.command(pass_context=True)
 async def emtimes(ctx):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
     command = ctx.message
     command_user = command.author
     if valid_times_command(command):
