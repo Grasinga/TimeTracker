@@ -32,7 +32,7 @@ FIRST_WEEK_START = None
 FIRST_WEEK_END = None
 SECOND_WEEK_START = None
 SECOND_WEEK_END = None
-MISSING_CLOCKS = {}
+SINGLE_CLOCKS = {}
 INVALID_CLOCKS = {}
 
 
@@ -330,7 +330,7 @@ async def clocks(ctx):
     clock_data = await clock_logic(ctx.message)
 
     # Get the message string.
-    content = get_member_clocks_string(clock_data[0], clock_data[1])
+    content = get_member_clocks_type('string', clock_data[0], clock_data[1])
 
     if not len(content) > 2000:  # Character limit for Discord.
         await BOT.send_message(ctx.message.author, content)
@@ -344,10 +344,10 @@ async def emclocks(ctx):
     clock_data = await clock_logic(ctx.message)
 
     # Get the message string.
-    content = get_member_clocks_string(clock_data[0], clock_data[1])
+    content = get_member_clocks_type('string', clock_data[0], clock_data[1])
 
     # Get the message embed.
-    em = get_member_clocks_embed(clock_data[0], clock_data[1])
+    em = get_member_clocks_type('embed', clock_data[0], clock_data[1], False)
 
     if not len(content) > 2000:  # Character limit for Discord.
         await BOT.send_message(ctx.message.author, embed=em)
@@ -362,7 +362,7 @@ async def times(ctx):
 
     for member in times_data.keys():
         # Get the message string.
-        content = get_member_clocks_string(times_data[member][0], times_data[member][1])
+        content = get_member_clocks_type('string', times_data[member][0], times_data[member][1])
 
         if not len(content) > 2000:  # Character limit for Discord.
             await BOT.send_message(ctx.message.author, content)
@@ -377,10 +377,10 @@ async def emtimes(ctx):
 
     for member in times_data.keys():
         # Get the message string.
-        content = get_member_clocks_string(times_data[member][0], times_data[member][1])
+        content = get_member_clocks_type('string', times_data[member][0], times_data[member][1])
 
         # Get the message embed.
-        em = get_member_clocks_embed(times_data[member][0], times_data[member][1])
+        em = get_member_clocks_type('embed', times_data[member][0], times_data[member][1], False)
 
         if not len(content) > 2000:  # Character limit for Discord.
             await BOT.send_message(ctx.message.author, embed=em)
@@ -394,12 +394,12 @@ async def clear(ctx):
     channel = message.channel
     if not str(channel.type) == 'private':
         await BOT.delete_message(message)
-    await BOT.send_message(channel, 'Deleting messages . . .')
     logs = []
     async for log in BOT.logs_from(channel):
         if log.author.name == BOT_NAME:
             logs.append(log)
     received = len(logs)
+    await BOT.send_message(channel, 'Deleting {} message(s) . . .'.format(received))
     while received > 0:
         tmp = []
         async for log in BOT.logs_from(channel):
@@ -421,8 +421,8 @@ async def clear(ctx):
 # Main logic for /clocks and /emclocks commands.
 async def clock_logic(message):
     # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
+    global SINGLE_CLOCKS, INVALID_CLOCKS
+    SINGLE_CLOCKS = {}
     INVALID_CLOCKS = {}
 
     command_user = message.author
@@ -463,9 +463,13 @@ async def clock_logic(message):
 # Main logic for /times and /emtimes commands.
 async def times_logic(message):
     # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
+    global SINGLE_CLOCKS, INVALID_CLOCKS
+    SINGLE_CLOCKS = {}
     INVALID_CLOCKS = {}
+
+    # Clear log file for new data.
+    with open('log.txt', 'w') as log_file:
+        log_file.write('')
 
     command_user = message.author
     if valid_times_command(message):
@@ -503,6 +507,7 @@ async def times_logic(message):
                     if member.name.lower() == am.lower():
                         members.append(member)
 
+        await BOT.send_message(command_user, 'Gathering data . . .')
         times_data = {}
         for member in members:
             # Get the messages that mentions the given member in the given channel.
@@ -561,8 +566,8 @@ def convert_history_to_clocks(history):
     return discord_clocks
 
 
-# Gets the string to be sent as a message for a member's clocks.
-def get_member_clocks_string(discord_clocks, week_hours):
+# Gets the data needed for the messages to be sent. Also logs SINGLE/INVALID_CLOCKS to a log.txt file.
+def get_member_clocks_type(clock_type, discord_clocks, week_hours, log_bad_clocks=True):
     dc = discord_clocks[0]
     member = dc.member
     if member.nick is not None:
@@ -573,14 +578,98 @@ def get_member_clocks_string(discord_clocks, week_hours):
 
     str_clocks = convert_clocks_to_string_by_week(discord_clocks)
     error = ''
-    if member in MISSING_CLOCKS or member in INVALID_CLOCKS:
+    if member in SINGLE_CLOCKS or member in INVALID_CLOCKS:
         error += 'Hours calculated may be invalid due to having single or incorrectly formatted clocks.'
+        if log_bad_clocks:
+            with open('log.txt', 'a') as log_file:
+                singles = 'None\n'
+                invalids = 'None\n'
+                temp = ''
+                if member in SINGLE_CLOCKS:
+                    singles = SINGLE_CLOCKS[member]
+                    for single in singles:
+                        if single['In'] is not None:
+                            message = single['In']
+                            author = message.author
+                            if author.nick is not None:
+                                author = author.nick
+                            else:
+                                author = author.name
+                            member = message.member
+                            if member.nick is not None:
+                                member = member.nick
+                            else:
+                                member = member.name
+                            replace_len = len(message.content.split('>')[0]) + 1
+
+                            temp += (
+                                        format_message_timestamp(message.timestamp)
+                                        + ' | ' + author + ': @' + member
+                                        + message.content[replace_len:] + '\n'
+                            )
+                        if single['Out'] is not None:
+                            message = single['Out']
+                            author = message.author
+                            if author.nick is not None:
+                                author = author.nick
+                            else:
+                                author = author.name
+                            member = message.member
+                            if member.nick is not None:
+                                member = member.nick
+                            else:
+                                member = member.name
+                            replace_len = len(message.content.split('>')[0]) + 1
+
+                            temp += (
+                                        format_message_timestamp(message.timestamp)
+                                        + ' | ' + author + ': @' + member
+                                        + message.content[replace_len:] + '\n'
+                            )
+                    singles = temp
+                temp = ''
+                if member in INVALID_CLOCKS:
+                    invalids = INVALID_CLOCKS[member]
+                    for invalid in invalids:
+                        message = invalid
+                        author = message.author
+                        if author.nick is not None:
+                            author = author.nick
+                        else:
+                            author = author.name
+                        member = message.mentions[0]
+                        if member.nick is not None:
+                            member = member.nick
+                        else:
+                            member = member.name
+                        replace_len = len(message.content.split('>')[0]) + 1
+
+                        temp += (
+                                    format_message_timestamp(message.timestamp)
+                                    + ' | ' + author + ': @' + member
+                                    + message.content[replace_len:] + '\n'
+                        )
+                    invalids = temp
+                log = (
+                    '{}\n\nSingle Clocks:\n{}\nInvalid Clocks:\n{}\n\n'.format(member, singles, invalids)
+                )
+                log_file.write(log)
+
     main_info = 'Pay Period: **{} to {}**\nTotal Hours: **{}**\n{}'.format(
         format_week_timestamp(FIRST_WEEK_START),
         format_week_timestamp(SECOND_WEEK_END),
         (week_hours[0] + week_hours[1]),
         error
     )
+
+    if clock_type == 'string':
+        return get_member_clocks_string(member, channel, main_info, str_clocks, week_hours)
+    else:
+        return get_member_clocks_embed(member, channel, main_info, str_clocks, week_hours)
+
+
+# Gets the string to be sent as a message for a member's clocks.
+def get_member_clocks_string(member, channel, main_info, str_clocks, week_hours):
     str_clocks = (
         '__**' + member + '** (' + channel.name + '):__\n\n'
         + main_info + '\n\n'
@@ -595,25 +684,7 @@ def get_member_clocks_string(discord_clocks, week_hours):
 
 
 # Gets the embed to be sent as a message for a member's clocks.
-def get_member_clocks_embed(discord_clocks, week_hours):
-    dc = discord_clocks[0]
-    member = dc.member
-    if member.nick is not None:
-        member = member.nick
-    else:
-        member = member.name
-    channel = dc.channel
-
-    str_clocks = convert_clocks_to_string_by_week(discord_clocks)
-    error = ''
-    if member in MISSING_CLOCKS or member in INVALID_CLOCKS:
-        error += 'Hours calculated may be invalid due to having single or incorrectly formatted clocks.'
-    main_info = 'Pay Period: **{} to {}**\nTotal Hours: **{}**\n{}'.format(
-        format_week_timestamp(FIRST_WEEK_START),
-        format_week_timestamp(SECOND_WEEK_END),
-        (week_hours[0] + week_hours[1]),
-        error
-    )
+def get_member_clocks_embed(member, channel, main_info, str_clocks, week_hours):
     em = discord.Embed(
         title=member + ' (' + channel.name + '):',
         description=main_info,
@@ -703,9 +774,9 @@ def hours_of_weeks(discord_clocks):
     return [first_week_hours, second_week_hours]
 
 
-# Helps calculate the hours by associating a clock-in with a clock-out.
+# Helps calculate the hours by associating a clock-in with a clock-out. Also populates SINGLE/INVALID_CLOCKS.
 def associate_clocks(discord_clocks):
-    global MISSING_CLOCKS, INVALID_CLOCKS
+    global SINGLE_CLOCKS, INVALID_CLOCKS
     if len(discord_clocks) == 0:
         return []
     member = discord_clocks[0].member
@@ -719,10 +790,10 @@ def associate_clocks(discord_clocks):
             if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
                 associated_clocks[-1]['Out'] = dc
             else:
-                # Missing clock
-                if member not in MISSING_CLOCKS:
-                    MISSING_CLOCKS[member] = []
-                MISSING_CLOCKS[member].append(dc)
+                # Single clock
+                if member not in SINGLE_CLOCKS:
+                    SINGLE_CLOCKS[member] = []
+                SINGLE_CLOCKS[member].append(dc)
         elif dc.type == 'In':
             associated_clocks.append({'In': dc, 'Out': None})
         else:
@@ -736,14 +807,15 @@ def associate_clocks(discord_clocks):
         if ac['Out'] is not None:
             valid_clocks.append(ac)
         else:
-            # Missing clock
-            if member not in MISSING_CLOCKS:
-                MISSING_CLOCKS[member] = []
-            MISSING_CLOCKS[member].append(ac)
+            # Single clock
+            if member not in SINGLE_CLOCKS:
+                SINGLE_CLOCKS[member] = []
+            SINGLE_CLOCKS[member].append(ac)
 
     return valid_clocks
 
 
+# Calculates the difference between an out and in time for each clock of the week; then it totals them.
 def calc_week_hours(week_clocks):
     total = 0.0
     for dc in week_clocks:
