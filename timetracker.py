@@ -108,8 +108,6 @@ class DiscordClock:
     def get_quarter_time(self):
         content = self.content
 
-        clock_time = ''
-        meridiem = ''
         try:
             # Check for the time in the message.
             time_spot = re.search(" \d\d\d\d", content)
@@ -167,6 +165,7 @@ class DiscordClock:
             if member not in INVALID_CLOCKS:
                 INVALID_CLOCKS[member] = []
             INVALID_CLOCKS[member].append(self.message)
+            return 0
 
         hour = clock_time[:2]
         if hour.endswith(':'):
@@ -273,26 +272,29 @@ async def on_message(message):
         await help_info(message.author)
         return
 
-    if not str(message.channel.type) == 'private':
-        try:
-            # Make sure the message is in a channel that starts with the current year.
-            re.search("\d\d\d\d", message.channel.name).start()
-
-            valid = DiscordClock(message).is_valid
-            if not valid[0]:
-                # If the message was an invalid Discord Clock, add an exclamation reaction to show it.
-                await BOT.add_reaction(message, '\u2757')  # :exclamation:
-                await BOT.send_message(message.author, 'Invalid clock due to: {}'.format(valid[1]))
-        except AttributeError:
-            # Don't add reactions if the message isn't a Discord Clock.
-            pass
-
     # Needed for any @BOT.command() methods to work.
     await BOT.process_commands(message)
 
-    # Help keep channels clean from bot commands.
-    if message.content.startswith(PREFIX):
-        await BOT.delete_message(message)
+    if not str(message.channel.type) == 'private':
+        # Help keep channels clean from bot commands.
+        if message.content.startswith(PREFIX):
+            try:
+                await BOT.delete_message(message)
+            except discord.NotFound:
+                pass
+        else:
+            try:
+                # Make sure the message is in a channel that starts with the current year.
+                re.search("\d\d\d\d", message.channel.name).start()
+
+                valid = DiscordClock(message).is_valid
+                if not valid[0]:
+                    # If the message was an invalid Discord Clock, add an exclamation reaction to show it.
+                    await BOT.add_reaction(message, '\u2757')  # :exclamation:
+                    await BOT.send_message(message.author, 'Invalid clock due to: {}'.format(valid[1]))
+            except AttributeError:
+                # Don't add reactions if the message isn't a Discord Clock.
+                pass
 
 
 @BOT.event
@@ -324,242 +326,66 @@ async def on_message_edit(before, after):
 
 @BOT.command(pass_context=True)
 async def clocks(ctx):
-    # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
-    INVALID_CLOCKS = {}
+    # [0] = discord_clocks | [1] = week_hours
+    clock_data = await clock_logic(ctx.message)
 
-    command = ctx.message
-    command_user = command.author
-    if valid_clocks_command(command):
-        # Get the member the command pertains to.
-        member = command.mentions[0]  # @name
+    # Get the message string.
+    content = get_member_clocks_string(clock_data[0], clock_data[1])
 
-        # Get the channel based on the command arguments.
-        channel = command.channel
-
-        # Get the command arguments.
-        cmd_args = command.content.split(' ')
-
-        # Set the dates based on command argument.
-        start_date = cmd_args[2]  # 'MM/dd/yy'
-        set_dates(start_date)
-
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(command)
-
-        # Get the messages that mentions the given member in the given channel.
-        history = await get_member_history(member, channel)
-
-        # Get the DiscordClocks from the message history.
-        discord_clocks = convert_history_to_clocks(history)
-
-        # Get hours of each week.
-        week_hours = hours_of_weeks(discord_clocks)
-
-        # Get the message string.
-        content = get_member_clocks_string(discord_clocks, week_hours)
-
-        if not len(content) > 2000:  # Character limit for Discord.
-            await BOT.send_message(command_user, content)
-        else:
-            await split_big_message(command_user, content)
+    if not len(content) > 2000:  # Character limit for Discord.
+        await BOT.send_message(ctx.message.author, content)
     else:
-        await BOT.delete_message(command)
-        await BOT.send_message(command_user, 'Usage: /clocks @name mm/dd/yy\nOnly usable in a server.')
+        await split_big_message(ctx.message.author, content)
 
 
 @BOT.command(pass_context=True)
 async def emclocks(ctx):
-    # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
-    INVALID_CLOCKS = {}
+    # [0] = discord_clocks | [1] = week_hours
+    clock_data = await clock_logic(ctx.message)
 
-    command = ctx.message
-    command_user = command.author
-    if valid_clocks_command(command):
-        # Get the member the command pertains to.
-        member = command.mentions[0]  # @name
+    # Get the message string.
+    content = get_member_clocks_string(clock_data[0], clock_data[1])
 
-        # Get the channel based on the command arguments.
-        channel = command.channel
+    # Get the message embed.
+    em = get_member_clocks_embed(clock_data[0], clock_data[1])
 
-        # Get the command arguments.
-        cmd_args = command.content.split(' ')
-
-        # Set the dates based on command argument.
-        start_date = cmd_args[2]  # 'MM/dd/yy'
-        set_dates(start_date)
-
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(command)
-
-        # Get the messages that mentions the given member in the given channel.
-        history = await get_member_history(member, channel)
-
-        # Get the DiscordClocks from the message history.
-        discord_clocks = convert_history_to_clocks(history)
-
-        # Get hours of each week.
-        week_hours = hours_of_weeks(discord_clocks)
-
-        # Get the message string.
-        content = get_member_clocks_string(discord_clocks, week_hours)
-
-        # Get the message embed.
-        em = get_member_clocks_embed(discord_clocks, week_hours)
-
-        if not len(content) > 2000:  # Character limit for Discord.
-            await BOT.send_message(command_user, embed=em)
-        else:
-            await split_big_message(command_user, content)
+    if not len(content) > 2000:  # Character limit for Discord.
+        await BOT.send_message(ctx.message.author, embed=em)
     else:
-        await BOT.delete_message(command)
-        await BOT.send_message(command_user, 'Usage: /emclocks @name mm/dd/yy\nOnly usable in a server.')
+        await split_big_message(ctx.message.author, content)
 
 
 @BOT.command(pass_context=True)
 async def times(ctx):
-    # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
-    INVALID_CLOCKS = {}
+    # member: [0] = discord_clocks | [1] = week_hours
+    times_data = await times_logic(ctx.message)
 
-    command = ctx.message
-    command_user = command.author
-    if valid_times_command(command):
-        # Get the channel based on the command arguments.
-        channel = command.channel
+    for member in times_data.keys():
+        # Get the message string.
+        content = get_member_clocks_string(times_data[member][0], times_data[member][1])
 
-        # Get the command arguments.
-        cmd_args = command.content.split(' ')
-
-        # Set the dates based on command argument.
-        start_date = cmd_args[1]  # 'MM/dd/yy'
-        set_dates(start_date)
-
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(command)
-
-        # Creates a list of the server members in alphabetically by last name.
-        members_alpha = []
-        for member in command.server.members:
-            if member.nick is not None:
-                members_alpha.append(' '.join(reversed(member.nick.split(' '))))
-            else:
-                members_alpha.append(' '.join(reversed(member.name.split(' '))))
-        members_alpha.sort()
-
-        # The above list was just names, this list is the actual member objects.
-        members = []
-        for am in members_alpha:
-            am = ' '.join(reversed(am.split(' ')))
-            for member in command.server.members:
-                if member.nick is not None:
-                    if member.nick.lower() == am.lower():
-                        members.append(member)
-                else:
-                    if member.name.lower() == am.lower():
-                        members.append(member)
-
-        for member in members:
-            # Get the messages that mentions the given member in the given channel.
-            history = await get_member_history(member, channel)
-
-            # No clocks for that member, so go to the next member.
-            if len(history) == 0:
-                continue
-
-            # Get the DiscordClocks from the message history.
-            discord_clocks = convert_history_to_clocks(history)
-
-            # Get hours of each week.
-            week_hours = hours_of_weeks(discord_clocks)
-
-            # Get the message string.
-            content = get_member_clocks_string(discord_clocks, week_hours)
-
-            if not len(content) > 2000:  # Character limit for Discord.
-                await BOT.send_message(command_user, content)
-            else:
-                await split_big_message(command_user, content)
-    else:
-        await BOT.delete_message(command)
-        await BOT.send_message(command_user, 'Usage: /times mm/dd/yy\nOnly usable in a server.')
+        if not len(content) > 2000:  # Character limit for Discord.
+            await BOT.send_message(ctx.message.author, content)
+        else:
+            await split_big_message(ctx.message.author, content)
 
 
 @BOT.command(pass_context=True)
 async def emtimes(ctx):
-    # Wipe previous missing and invalid clocks.
-    global MISSING_CLOCKS, INVALID_CLOCKS
-    MISSING_CLOCKS = {}
-    INVALID_CLOCKS = {}
+    # member: [0] = discord_clocks | [1] = week_hours
+    times_data = await times_logic(ctx.message)
 
-    command = ctx.message
-    command_user = command.author
-    if valid_times_command(command):
-        # Get the channel based on the command arguments.
-        channel = command.channel
+    for member in times_data.keys():
+        # Get the message string.
+        content = get_member_clocks_string(times_data[member][0], times_data[member][1])
 
-        # Get the command arguments.
-        cmd_args = command.content.split(' ')
+        # Get the message embed.
+        em = get_member_clocks_embed(times_data[member][0], times_data[member][1])
 
-        # Set the dates based on command argument.
-        start_date = cmd_args[1]  # 'MM/dd/yy'
-        set_dates(start_date)
-
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(command)
-
-        # Creates a list of the server members in alphabetically by last name.
-        members_alpha = []
-        for member in command.server.members:
-            if member.nick is not None:
-                members_alpha.append(' '.join(reversed(member.nick.split(' '))))
-            else:
-                members_alpha.append(' '.join(reversed(member.name.split(' '))))
-        members_alpha.sort()
-
-        # The above list was just names, this list is the actual member objects.
-        members = []
-        for am in members_alpha:
-            am = ' '.join(reversed(am.split(' ')))
-            for member in command.server.members:
-                if member.nick is not None:
-                    if member.nick.lower() == am.lower():
-                        members.append(member)
-                else:
-                    if member.name.lower() == am.lower():
-                        members.append(member)
-
-        for member in members:
-            # Get the messages that mentions the given member in the given channel.
-            history = await get_member_history(member, channel)
-
-            # No clocks for that member, so go to the next member.
-            if len(history) == 0:
-                continue
-
-            # Get the DiscordClocks from the message history.
-            discord_clocks = convert_history_to_clocks(history)
-
-            # Get hours of each week.
-            week_hours = hours_of_weeks(discord_clocks)
-
-            # Get the message string.
-            content = get_member_clocks_string(discord_clocks, week_hours)
-
-            # Get the message embed.
-            em = get_member_clocks_embed(discord_clocks, week_hours)
-
-            if not len(content) > 2000:  # Character limit for Discord.
-                await BOT.send_message(command_user, embed=em)
-            else:
-                await split_big_message(command_user, content)
-    else:
-        await BOT.delete_message(command)
-        await BOT.send_message(command_user, 'Usage: /emtimes mm/dd/yy\nOnly usable in a server.')
+        if not len(content) > 2000:  # Character limit for Discord.
+            await BOT.send_message(ctx.message.author, embed=em)
+        else:
+            await split_big_message(ctx.message.author, content)
 
 
 @BOT.command(pass_context=True)
@@ -590,6 +416,116 @@ async def clear(ctx):
 
 
 # ----- Core Tracker Functions -----
+
+
+# Main logic for /clocks and /emclocks commands.
+async def clock_logic(message):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
+    command_user = message.author
+    if valid_clocks_command(message):
+        # Get the member the command pertains to.
+        member = message.mentions[0]  # @name
+
+        # Get the channel based on the command arguments.
+        channel = message.channel
+
+        # Get the command arguments.
+        cmd_args = message.content.split(' ')
+
+        # Set the dates based on command argument.
+        start_date = cmd_args[2]  # 'MM/dd/yy'
+        set_dates(start_date)
+
+        # Delete the command from the channel to keep the channel clean.
+        await BOT.delete_message(message)
+
+        # Get the messages that mentions the given member in the given channel.
+        history = await get_member_history(member, channel)
+
+        # Get the DiscordClocks from the message history.
+        discord_clocks = convert_history_to_clocks(history)
+
+        # Get hours of each week.
+        week_hours = hours_of_weeks(discord_clocks)
+
+        # Return clock data to be used.
+        return [discord_clocks, week_hours]
+    else:
+        await BOT.delete_message(message)
+        await BOT.send_message(command_user, 'You may not have permissions to use this command.\n'
+                                             'Use ?{} to see command syntax and permissions.'.format(BOT_NAME))
+
+
+# Main logic for /times and /emtimes commands.
+async def times_logic(message):
+    # Wipe previous missing and invalid clocks.
+    global MISSING_CLOCKS, INVALID_CLOCKS
+    MISSING_CLOCKS = {}
+    INVALID_CLOCKS = {}
+
+    command_user = message.author
+    if valid_times_command(message):
+        # Get the channel based on the command arguments.
+        channel = message.channel
+
+        # Get the command arguments.
+        cmd_args = message.content.split(' ')
+
+        # Set the dates based on command argument.
+        start_date = cmd_args[1]  # 'MM/dd/yy'
+        set_dates(start_date)
+
+        # Delete the command from the channel to keep the channel clean.
+        await BOT.delete_message(message)
+
+        # Creates a list of the server members in alphabetically by last name.
+        members_alpha = []
+        for member in message.server.members:
+            if member.nick is not None:
+                members_alpha.append(' '.join(reversed(member.nick.split(' '))))
+            else:
+                members_alpha.append(' '.join(reversed(member.name.split(' '))))
+        members_alpha.sort()
+
+        # The above list was just names, this list is the actual member objects.
+        members = []
+        for am in members_alpha:
+            am = ' '.join(reversed(am.split(' ')))
+            for member in message.server.members:
+                if member.nick is not None:
+                    if member.nick.lower() == am.lower():
+                        members.append(member)
+                else:
+                    if member.name.lower() == am.lower():
+                        members.append(member)
+
+        times_data = {}
+        for member in members:
+            # Get the messages that mentions the given member in the given channel.
+            history = await get_member_history(member, channel)
+
+            # No clocks for that member, so go to the next member.
+            if len(history) == 0:
+                continue
+
+            # Get the DiscordClocks from the message history.
+            discord_clocks = convert_history_to_clocks(history)
+
+            # Get hours of each week.
+            week_hours = hours_of_weeks(discord_clocks)
+
+            # Enter the data for the member.
+            times_data[member] = [discord_clocks, week_hours]
+
+        return times_data
+    else:
+        await BOT.delete_message(message)
+        await BOT.send_message(command_user, 'You may not have permissions to use this command.\n'
+                                             'Use ?{} to see command syntax and permissions.'.format(BOT_NAME))
 
 
 # Gets the member's history before SECOND_WEEK_END.
