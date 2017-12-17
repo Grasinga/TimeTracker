@@ -15,7 +15,7 @@ BOT_NAME = 'TimeTracker'
 BOT_APP_ID = ''
 BOT_TOKEN = ''
 PREFIX = '/'
-SPEC_ROLE = 'Tracker'
+PROTECTED_ROLE = 'Tracker'
 LOCAL_UTC = -7
 MESSAGE_TIMESTAMP_FORMAT = '%m/%d/%y (%A) @ %I:%M %p'
 WEEK_TIMESTAMP_FORMAT = '%m/%d/%y (%A)'
@@ -41,7 +41,7 @@ def populate_global_properties():
     if os.path.isfile('properties.yml'):
         properties = yaml.load(open('properties.yml'))
 
-        global BOT_NAME, BOT_APP_ID, BOT_TOKEN, PREFIX, SPEC_ROLE, LOCAL_UTC, MESSAGE_TIMESTAMP_FORMAT, \
+        global BOT_NAME, BOT_APP_ID, BOT_TOKEN, PREFIX, PROTECTED_ROLE, LOCAL_UTC, MESSAGE_TIMESTAMP_FORMAT, \
             WEEK_TIMESTAMP_FORMAT, CLOCK_IN_WORDS, CLOCK_OUT_WORDS, RETRIEVABLE_MESSAGE_AMOUNT
 
         if len(properties) < 11:
@@ -585,48 +585,51 @@ def get_member_clocks_type(clock_type, discord_clocks, week_hours, log_bad_clock
                 singles = 'None\n'
                 invalids = 'None\n'
                 temp = ''
-                if member in SINGLE_CLOCKS:
-                    singles = SINGLE_CLOCKS[member]
-                    for single in singles:
-                        if single['In'] is not None:
-                            message = single['In']
-                            author = message.author
-                            if author.nick is not None:
-                                author = author.nick
-                            else:
-                                author = author.name
-                            member = message.member
-                            if member.nick is not None:
-                                member = member.nick
-                            else:
-                                member = member.name
-                            replace_len = len(message.content.split('>')[0]) + 1
+                try:
+                    if member in SINGLE_CLOCKS:
+                        singles = SINGLE_CLOCKS[member]
+                        for single in singles:
+                            if single['In'] is not None:
+                                message = single['In']
+                                author = message.author
+                                if author.nick is not None:
+                                    author = author.nick
+                                else:
+                                    author = author.name
+                                member = message.member
+                                if member.nick is not None:
+                                    member = member.nick
+                                else:
+                                    member = member.name
+                                replace_len = len(message.content.split('>')[0]) + 1
 
-                            temp += (
-                                        format_message_timestamp(message.timestamp)
-                                        + ' | ' + author + ': @' + member
-                                        + message.content[replace_len:] + '\n'
-                            )
-                        if single['Out'] is not None:
-                            message = single['Out']
-                            author = message.author
-                            if author.nick is not None:
-                                author = author.nick
-                            else:
-                                author = author.name
-                            member = message.member
-                            if member.nick is not None:
-                                member = member.nick
-                            else:
-                                member = member.name
-                            replace_len = len(message.content.split('>')[0]) + 1
+                                temp += (
+                                            format_message_timestamp(message.timestamp)
+                                            + ' | ' + author + ': @' + member
+                                            + message.content[replace_len:] + '\n'
+                                )
+                            if single['Out'] is not None:
+                                message = single['Out']
+                                author = message.author
+                                if author.nick is not None:
+                                    author = author.nick
+                                else:
+                                    author = author.name
+                                member = message.member
+                                if member.nick is not None:
+                                    member = member.nick
+                                else:
+                                    member = member.name
+                                replace_len = len(message.content.split('>')[0]) + 1
 
-                            temp += (
-                                        format_message_timestamp(message.timestamp)
-                                        + ' | ' + author + ': @' + member
-                                        + message.content[replace_len:] + '\n'
-                            )
-                    singles = temp
+                                temp += (
+                                            format_message_timestamp(message.timestamp)
+                                            + ' | ' + author + ': @' + member
+                                            + message.content[replace_len:] + '\n'
+                                )
+                        singles = temp
+                except TypeError:
+                    pass
                 temp = ''
                 if member in INVALID_CLOCKS:
                     invalids = INVALID_CLOCKS[member]
@@ -715,13 +718,17 @@ def convert_clocks_to_string_by_week(discord_clocks):
     second_week = ''
     for dc in discord_clocks:
         author = dc.author
-        if author.nick is not None:
+        if author is None:
+            author = 'Unknown'
+        elif author.nick is not None:
             author = author.nick
         else:
             author = author.name
 
         member = dc.member
-        if member.nick is not None:
+        if member is None:
+            member = 'Unknown'
+        elif member.nick is not None:
             member = member.nick
         else:
             member = member.name
@@ -785,22 +792,25 @@ def associate_clocks(discord_clocks):
     else:
         member = member.name
     associated_clocks = []
-    for dc in discord_clocks:
-        if dc.type == 'Out':
-            if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
-                associated_clocks[-1]['Out'] = dc
+    try:
+        for dc in discord_clocks:
+            if dc.type == 'Out':
+                if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
+                    associated_clocks[-1]['Out'] = dc
+                else:
+                    # Single clock
+                    if member not in SINGLE_CLOCKS:
+                        SINGLE_CLOCKS[member] = []
+                    SINGLE_CLOCKS[member].append(dc)
+            elif dc.type == 'In':
+                associated_clocks.append({'In': dc, 'Out': None})
             else:
-                # Single clock
-                if member not in SINGLE_CLOCKS:
-                    SINGLE_CLOCKS[member] = []
-                SINGLE_CLOCKS[member].append(dc)
-        elif dc.type == 'In':
-            associated_clocks.append({'In': dc, 'Out': None})
-        else:
-            # Invalid clock
-            if member not in INVALID_CLOCKS:
-                INVALID_CLOCKS[member] = []
-            INVALID_CLOCKS[member].append(dc)
+                # Invalid clock
+                if member not in INVALID_CLOCKS:
+                    INVALID_CLOCKS[member] = []
+                INVALID_CLOCKS[member].append(dc)
+    except IndexError:
+        pass
 
     valid_clocks = []
     for ac in associated_clocks:
@@ -945,7 +955,7 @@ async def help_info(channel):
               'command was run in. It also displays the total hours of the clocks per week.\n'
               '- Arguments:\n'
               '      mm/dd/yy - This is the start of the two week pay period (SAT).\n'
-              '- Who can use: @' + SPEC_ROLE,
+              '- Who can use: @' + PROTECTED_ROLE,
         inline=False)
     em.add_field(
         name='/emclocks @user mm/dd/yy',
