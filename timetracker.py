@@ -5,26 +5,30 @@ import os
 import re
 import sys
 import yaml
-import time
 from datetime import datetime, timedelta
 
-# ----- Global properties defined by yaml file -----
+
+properties_file_path = 'TimeTracker_Properties.yml'
 
 
-BOT_NAME = 'TimeTracker'
-BOT_APP_ID = ''
-BOT_TOKEN = ''
-PREFIX = '/'
-PROTECTED_ROLE = 'Tracker'
-LOCAL_UTC = -7
-MESSAGE_TIMESTAMP_FORMAT = '%m/%d/%y (%A) @ %I:%M %p'
-WEEK_TIMESTAMP_FORMAT = '%m/%d/%y (%A)'
-CLOCK_IN_WORDS = ['In', 'Back']
-CLOCK_OUT_WORDS = ['Out', 'Off']
-RETRIEVABLE_MESSAGE_AMOUNT = 300
+# ----- Global properties defined in the properties file -----
 
 
-# ----- Global properties not defined by yaml file -----
+EXCEPTION_LOG = None
+CLOCK_LOG = None
+BOT_TOKEN = None
+CMD_PREFIX = None
+PROTECTED_ROLE = None
+LOCAL_UTC = None
+DAYLIGHT_SAVINGS = None
+MESSAGE_TIMESTAMP_FORMAT = None
+WEEK_TIMESTAMP_FORMAT = None
+CLOCK_IN_WORDS = None
+CLOCK_OUT_WORDS = None
+RETRIEVABLE_MESSAGE_AMOUNT = None
+
+
+# ----- Global properties not defined in the properties file -----
 
 
 BOT = None
@@ -36,161 +40,331 @@ SINGLE_CLOCKS = {}
 INVALID_CLOCKS = {}
 
 
-# Read in global properties from properties.yml file.
-def populate_global_properties():
-    if os.path.isfile('properties.yml'):
-        properties = yaml.load(open('properties.yml'))
+# Read in global properties from properties file.
+def initialize_bot():
+    if os.path.isfile(properties_file_path):
+        properties = yaml.load(open(properties_file_path))
 
-        global BOT_NAME, BOT_APP_ID, BOT_TOKEN, PREFIX, PROTECTED_ROLE, LOCAL_UTC, MESSAGE_TIMESTAMP_FORMAT, \
-            WEEK_TIMESTAMP_FORMAT, CLOCK_IN_WORDS, CLOCK_OUT_WORDS, RETRIEVABLE_MESSAGE_AMOUNT
+        global EXCEPTION_LOG, CLOCK_LOG, BOT_TOKEN, CMD_PREFIX, PROTECTED_ROLE, LOCAL_UTC, DAYLIGHT_SAVINGS, \
+            MESSAGE_TIMESTAMP_FORMAT, WEEK_TIMESTAMP_FORMAT, CLOCK_IN_WORDS, CLOCK_OUT_WORDS, \
+            RETRIEVABLE_MESSAGE_AMOUNT
 
-        if len(properties) < 11:
-            print('Some properties are missing in the properties.yml file! Please add them and try again. Exiting.')
-            sys.exit()
+        try:
+            EXCEPTION_LOG = properties['exception-log']
+            if EXCEPTION_LOG is None or EXCEPTION_LOG == '':
+                EXCEPTION_LOG = 'TimeTracker_Exception_Log.txt'
+                exception_log_write('WARNING',
+                                    'An exception log path was not specified; using default value: {}'
+                                    .format(EXCEPTION_LOG))
+        except KeyError as ke:
+            EXCEPTION_LOG = 'TimeTracker_Exception_Log.txt'
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, EXCEPTION_LOG))
+            pass
 
-        BOT_NAME = properties['name']
-        BOT_APP_ID = properties['id']
-        BOT_TOKEN = properties['token']
-        PREFIX = properties['prefix']
-        SPEC_ROLE = properties['role']
-        LOCAL_UTC = int(properties['local-utc'])
-        MESSAGE_TIMESTAMP_FORMAT = properties['message-timestamp-format']
-        WEEK_TIMESTAMP_FORMAT = properties['week-timestamp-format']
-        CLOCK_IN_WORDS = properties['in-words']
-        CLOCK_OUT_WORDS = properties['out-words']
-        RETRIEVABLE_MESSAGE_AMOUNT = int(properties['id'])
+        try:
+            CLOCK_LOG = properties['clock-log']
+            if CLOCK_LOG is None or CLOCK_LOG == '':
+                CLOCK_LOG = 'Clock_Exceptions_Log.txt'
+                exception_log_write('WARNING',
+                                    'An exception log path was not specified; using default value: {}'
+                                    .format(EXCEPTION_LOG))
+        except KeyError as ke:
+            CLOCK_LOG = 'Clock_Exceptions_Log.txt'
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, CLOCK_LOG))
+            pass
 
-        # Updates the bot to use the properties.yml prefix and creates the client.
+        try:
+            BOT_TOKEN = properties['token']
+            if BOT_TOKEN is None or BOT_TOKEN == '':
+                exception_log_write('CRITICAL',
+                                    'A bot Token was not specified.')
+        except KeyError as ke:
+            exception_log_write('CRITICAL',
+                                '{} property is missing in the properties file.'.format(ke))
+            pass
+
+        try:
+            CMD_PREFIX = properties['prefix']
+            if CMD_PREFIX is None or CMD_PREFIX == '':
+                CMD_PREFIX = '/'
+                exception_log_write('WARNING',
+                                    'A command prefix was not specified; using default value: {}'
+                                    .format(CMD_PREFIX))
+        except KeyError as ke:
+            CMD_PREFIX = '/'
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, CMD_PREFIX))
+            pass
+
+        try:
+            PROTECTED_ROLE = properties['role']
+            if PROTECTED_ROLE is None or PROTECTED_ROLE == '':
+                PROTECTED_ROLE = 'Tracker'
+                exception_log_write('WARNING',
+                                    'A protected commands role name was not specified; using default value: {}'
+                                    .format(PROTECTED_ROLE))
+        except KeyError as ke:
+            PROTECTED_ROLE = 'Tracker'
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, PROTECTED_ROLE))
+            pass
+
+        try:
+            LOCAL_UTC = int(properties['local-utc'])
+        except TypeError:
+            LOCAL_UTC = -7
+            exception_log_write('WARNING',
+                                'Unable to get the local UTC from the value provided; using default value: {}'
+                                .format(LOCAL_UTC))
+        except KeyError as ke:
+            LOCAL_UTC = -7
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, LOCAL_UTC))
+            pass
+
+        try:
+            DAYLIGHT_SAVINGS = properties['daylight-savings']
+            if DAYLIGHT_SAVINGS is None:
+                DAYLIGHT_SAVINGS = True
+                exception_log_write('WARNING', 'Daylight Savings not specified; using default value: {}'
+                                    .format(DAYLIGHT_SAVINGS))
+        except KeyError as ke:
+            DAYLIGHT_SAVINGS = True
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, DAYLIGHT_SAVINGS))
+            pass
+
+        try:
+            MESSAGE_TIMESTAMP_FORMAT = properties['message-timestamp-format']
+            if MESSAGE_TIMESTAMP_FORMAT is None or MESSAGE_TIMESTAMP_FORMAT == '':
+                MESSAGE_TIMESTAMP_FORMAT = "%m/%d/%y (%A) @ %I:%M %p"
+                exception_log_write('WARNING',
+                                    'Message Timestamp Format not specified; using default value: {}'
+                                    .format(MESSAGE_TIMESTAMP_FORMAT))
+        except KeyError as ke:
+            MESSAGE_TIMESTAMP_FORMAT = "%m/%d/%y (%A) @ %I:%M %p"
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, MESSAGE_TIMESTAMP_FORMAT))
+            pass
+
+        try:
+            WEEK_TIMESTAMP_FORMAT = properties['week-timestamp-format']
+            if WEEK_TIMESTAMP_FORMAT is None or WEEK_TIMESTAMP_FORMAT == '':
+                WEEK_TIMESTAMP_FORMAT = "%m/%d/%y (%A)"
+                exception_log_write('WARNING',
+                                    'Week Timestamp Format not specified; using default value: {}'
+                                    .format(WEEK_TIMESTAMP_FORMAT))
+        except KeyError as ke:
+            WEEK_TIMESTAMP_FORMAT = "%m/%d/%y (%A)"
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, WEEK_TIMESTAMP_FORMAT))
+            pass
+
+        try:
+            CLOCK_IN_WORDS = properties['in-words']
+            if CLOCK_IN_WORDS is None or len(CLOCK_IN_WORDS) == 0:
+                CLOCK_IN_WORDS = ['In', 'Back']
+                exception_log_write('WARNING',
+                                    'Clock in words not specified; using default values: {}'
+                                    .format(CLOCK_IN_WORDS))
+        except KeyError as ke:
+            CLOCK_IN_WORDS = ['In', 'Back']
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default values: {}'
+                                .format(ke, CLOCK_IN_WORDS))
+            pass
+
+        try:
+            CLOCK_OUT_WORDS = properties['out-words']
+            if CLOCK_OUT_WORDS is None or len(CLOCK_OUT_WORDS) == 0:
+                CLOCK_OUT_WORDS = ['Out', 'Off']
+                exception_log_write('WARNING',
+                                    'Clock in words not specified; using default values: {}'
+                                    .format(CLOCK_OUT_WORDS))
+        except KeyError as ke:
+            CLOCK_OUT_WORDS = ['Out', 'Off']
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default values: {}'
+                                .format(ke, CLOCK_OUT_WORDS))
+            pass
+
+        try:
+            RETRIEVABLE_MESSAGE_AMOUNT = int(properties['message-recall'])
+        except TypeError:
+            RETRIEVABLE_MESSAGE_AMOUNT = 300
+            exception_log_write('WARNING',
+                                'Unable to get the message recall amount from the value provided; '
+                                'using default value: {}'
+                                .format(RETRIEVABLE_MESSAGE_AMOUNT))
+        except KeyError as ke:
+            RETRIEVABLE_MESSAGE_AMOUNT = 300
+            exception_log_write('WARNING',
+                                '{} property is missing in the properties file; using default value: {}'
+                                .format(ke, RETRIEVABLE_MESSAGE_AMOUNT))
+            pass
+
+        # Updates the bot to use the specified command prefix and creates the client.
+        # Disabling the help_attrs allows for custom help commands.
         global BOT
-        BOT = commands.Bot(command_prefix=PREFIX, help_attrs={'disabled': True})
+        BOT = commands.Bot(command_prefix=CMD_PREFIX, help_attrs={'disabled': True})
+
+        print('The bot will use the following values:')
+        print('Exception Log File Path: {}'.format(EXCEPTION_LOG))
+        print('Command Prefix: {}'.format(CMD_PREFIX))
+        print('Protected Command Role: {}'.format(PROTECTED_ROLE))
+        print('Clock Log Path: {}'.format(CLOCK_LOG))
+        print('Local UTC: {}'.format(LOCAL_UTC))
+        print('Daylight Savings: {}'.format(DAYLIGHT_SAVINGS))
+        print('Message Timestamp Format: {}'.format(MESSAGE_TIMESTAMP_FORMAT))
+        print('Week Timestamp Format: {}'.format(WEEK_TIMESTAMP_FORMAT))
+        print('Clock-in Words: {}'.format(CLOCK_IN_WORDS))
+        print('Clock-out Words: {}'.format(CLOCK_OUT_WORDS))
+        print('Retrievable Message Amount: {}'.format(RETRIEVABLE_MESSAGE_AMOUNT))
+        print()
     else:
-        print('properties.yml file is missing! Exiting.')
+        exception = 'Properties file does not exist at {}.'.format(properties_file_path)
+        exception_log_write('CRITICAL', exception)
+
+
+# Handles exception logging and stopping the program if a critical exception is passed.
+def exception_log_write(warning_type, exception, channel=None):
+    message = '{} | {}: {}\n'.format(datetime.now(), warning_type, exception)
+    with open(EXCEPTION_LOG, 'a') as exception_log:
+        exception_log.write(message)
+
+    if BOT is not None and channel is not None:
+        BOT.send_message(channel, message)
+    else:
+        print(message)
+
+    if warning_type == 'CRITICAL':
+        try:
+            BOT.close()
+        except:
+            pass
         sys.exit()
 
 
-populate_global_properties()
+initialize_bot()
 
 
-# ----- Discord Clock Class -----
-
-
-class DiscordClock:
-    def __init__(self, message):
-        self.is_valid = [True, None]
-        self.message = message
-        self.author = message.author
-        self.channel = message.channel
-        self.content = message.content
-        if len(message.mentions) == 1:
-            self.member = message.mentions[0]
-        elif len(message.mentions) > 1:
-            self.member = None
-            self.is_valid = [False, "Too many mentions."]
-        else:
-            self.member = None
-            self.is_valid = [False, "Missing a mention."]
+class Clock:
+    def __init__(self, discord_message):
+        self.error = None
+        self.raw = discord_message
+        try:
+            if len(discord_message.mentions) > 1:
+                self.error = 'Too many mentions.'
+            else:
+                self.member = discord_message.mentions[0]
+        except IndexError:
+            self.error = 'Missing mention.'
+            return
+        self.author = discord_message.author
+        self.message = discord_message.content
+        self.channel = discord_message.channel
+        self.timestamp = discord_message.timestamp
         self.type = self.get_clock_type()
-        self.timestamp = message.timestamp
-        self.clock_time = ''
-        self.quarter_time = self.get_quarter_time()
+        if len(self.type) > 3:
+            self.error = 'Unknown clock type.'
+        self.value = self.get_quarter_time()
+        if not is_integer(self.value):
+            self.error = self.value
+        if self.error is not None:
+            self.type = 'Invalid'  # Clock will get added to invalids during association.
 
     def get_clock_type(self):
-        content = self.message.content
-        words = content.split(' ')
+        words = self.message.split(' ')
         for word in words:
             if word.title() in CLOCK_IN_WORDS:
                 return 'In'
             elif word.title() in CLOCK_OUT_WORDS:
                 return 'Out'
-        self.is_valid = [False, "Missing an 'in' or 'out' word."]
-        return 'Invalid'
+        return 'Missing clock type key word.'
 
     def get_quarter_time(self):
-        content = self.content
-
-        try:
-            # Check for the time in the message.
-            time_spot = re.search(" \d\d\d\d", content)
+        # Check for the time in the message.
+        time_spot = re.search(" \d\d\d\d", self.message)
+        if time_spot is None:
+            time_spot = re.search(" \d\d\d", self.message)
             if time_spot is None:
-                time_spot = re.search(" \d\d\d", content)
+                time_spot = re.search(" \d\d:\d\d", self.message)
                 if time_spot is None:
-                    time_spot = re.search(" \d\d:\d\d", content)
+                    time_spot = re.search(" \d:\d\d", self.message)
                     if time_spot is None:
-                        time_spot = re.search(" \d:\d\d", content)
-                        if time_spot is None:
-                            self.is_valid = [False, "Unable to find the time in/out."]
-                            raise ValueError
-                        else:
-                            time_spot = time_spot.start()
+                        return "Unable to find the clock's time."
                     else:
                         time_spot = time_spot.start()
+                        time_count = 4
+                        requires_meridiem = True
                 else:
                     time_spot = time_spot.start()
+                    time_count = 5
+                    requires_meridiem = True
             else:
                 time_spot = time_spot.start()
+                time_count = 3
+                requires_meridiem = False
+        else:
+            time_spot = time_spot.start()
+            time_count = 4
+            requires_meridiem = False
 
-            # Get the message's clock time.
-            time_start = content[time_spot + 1:]
-
-            # Check for meridiem.
-            meridiem = ''
-            if time_start.lower().endswith('am'):
-                meridiem = 'am'
-            if time_start.lower().endswith('pm'):
-                meridiem = 'pm'
-
-            if meridiem is not '':
-                if time_start.lower().endswith(' ' + meridiem):
-                    time_start = time_start[:-3]
-                else:
-                    time_start = time_start[:-2]
-
-            if len(time_start) == 3:
-                time_start = '0' + time_start
-            hour = time_start[:2]
-            minutes = time_start[2:]
-            if ':' not in hour and ':' not in minutes:
-                clock_time = hour + ':' + minutes
+        # Get the clock's meridiem if required.
+        meridiem = ''
+        time_start = self.message[time_spot + 1:]  # Index of time without the space.
+        if requires_meridiem:
+            words = time_start.split(' ')
+            if len(words) <= 1:
+                return 'Missing meridiem.'
             else:
-                clock_time = hour + minutes
+                meridiem = words[1]
 
-            self.clock_time = clock_time
-        except ValueError:
-            global INVALID_CLOCKS
-            member = self.member
-            if member.nick is not None:
-                member = member.nick
-            else:
-                member = member.name
-            if member not in INVALID_CLOCKS:
-                INVALID_CLOCKS[member] = []
-            INVALID_CLOCKS[member].append(self.message)
-            return 0
+            if not len(meridiem) == 2:
+                return 'Unexpected meridiem.'
 
-        hour = clock_time[:2]
-        if hour.endswith(':'):
-            hour = hour[:-1]
-        minutes = clock_time[-2:]
+        # Get the time without the meridiem or the rest of the message.
+        time_start = time_start[:time_count]
 
+        # Prepend leading zero if it is missing.
+        if time_count == 3 or (time_count == 4 and ':' in time_start):
+            time_start = '0' + time_start
+
+        # Get the hours.
+        hour = time_start[:2]
+        if int(hour) > 12 and requires_meridiem:
+            return 'Invalid military time.'
+
+        # Get the minutes.
+        minutes = time_start[-2:]
+        if int(minutes) >= 60:
+            return 'Minutes must be less than 60.'
+
+        # Check if the hours and minutes are numeric values and then calculate the quarter time.
         if is_integer(hour) and is_integer(minutes):
-            return self.calc_quarter_time(hour, minutes, meridiem)
-        self.is_valid = [False, "Unable to calculate the time in/out."]
-        return 0
+            return self.__calc_quarter_time__(hour, minutes, meridiem)
+        return "Unable to calculate the clock's time."
 
-    # ----- Times are reported in quarter-hour segments -----
-
-    # Handles the meridiem then continues on to calculate the quarter time.
-    def calc_quarter_time(self, hour, minutes, meridiem):
+    def __calc_quarter_time__(self, hour, minutes, meridiem):
         if meridiem == '' or meridiem == 'am':
-            return self.quarter_hour(hour, minutes)
+            return self.__quarter_hour__(hour, minutes)
         else:
             hour = int(hour)
             if not hour == 12:
                 hour += 12
-            return self.quarter_hour(hour, minutes)
+            return self.__quarter_hour__(hour, minutes)
 
-    # Calculate the hour of the quarter time.
-    def quarter_hour(self, hour, minutes):
+    def __quarter_hour__(self, hour, minutes):
         hour = float(hour)
         minutes = int(minutes)
         tens = int(minutes / 10)
@@ -230,10 +404,9 @@ class DiscordClock:
 
         minutes = (tens * 10) + ones
 
-        return hour + self.convert_minutes_to_quarter(minutes)
+        return hour + self.__convert_minutes_to_quarter__(minutes)
 
-    # Calculates the minutes of the quarter time.
-    def convert_minutes_to_quarter(self, minutes):
+    def __convert_minutes_to_quarter__(self, minutes):
         if minutes == 0:
             return 0
         if minutes == 15:
@@ -244,81 +417,58 @@ class DiscordClock:
             return 0.75
         return 0
 
-    # For debugging purposes.
-    def print_info(self):
-        print('Message: {}\nAuthor: {}\nChannel: {}\nMentions: {}\nType: {}\nTime: {}\nQuarter Time: {}'.format(
-            self.content, self.author.name, self.channel.name, self.member.name, self.type, self.clock_time,
-            self.quarter_time
-        ))
-
 
 # ----- Events -----
 
 
 @BOT.event
 async def on_ready():
-    print('Successfully logged in as:', str(BOT.user)[:-5])
-    print('Using ' + BOT_NAME + " as the bot's name.")
-    print('Current time: ' + time.strftime('%x %X %Z'))
+    print('Successfully logged in as:', BOT.user.name)
+    print('Add me to a server via: https://discordapp.com/api/oauth2/authorize?client_id={}&scope=bot&permissions=8'
+          .format(BOT.user.id))
+
+    # Make sure the bot has admin privileges on all servers it is attached to.
+    # Overarching permissions error protection.
+    for server in BOT.servers:
+        bot_member = server.get_member(BOT.user.id)
+        if bot_member is not None:
+            if not bot_member.server_permissions.administrator:
+                # Kills the bot for all servers if the bot does not have admin permissions on one of them. (Lazy)
+                exception_log_write('CRITICAL',
+                                    'The bot needs administrator privileges to run on: {}'.format(server.name))
 
 
 @BOT.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author.bot:  # Ignore bots trying to run commands.
         return
-    elif valid_help_command(message):
-        if not str(message.channel.type) == 'private':
-            await BOT.delete_message(message)
-        await help_info(message.author)
+
+    if valid_help_command(message)['valid']:  # Check if the help command was entered.
+        if message.channel.type is not discord.ChannelType.private:
+            await BOT.delete_message(message)  # Keep channel clean.
+        await help_info(message.author)  # Send bot info and commands to the user.
         return
 
     # Needed for any @BOT.command() methods to work.
     await BOT.process_commands(message)
 
-    if not str(message.channel.type) == 'private':
-        # Help keep channels clean from bot commands.
-        if message.content.startswith(PREFIX):
+    if message.channel.type is not discord.ChannelType.private:
+        if message.content.startswith(CMD_PREFIX):
             try:
-                await BOT.delete_message(message)
+                await BOT.delete_message(message)  # Keep channel clean.
             except discord.NotFound:
                 pass
         else:
-            try:
-                # Make sure the message is in a channel that starts with the current year.
-                re.search("\d\d\d\d", message.channel.name).start()
-
-                valid = DiscordClock(message).is_valid
-                if not valid[0]:
-                    # If the message was an invalid Discord Clock, add an exclamation reaction to show it.
-                    await BOT.add_reaction(message, '\u2757')  # :exclamation:
-                    await BOT.send_message(message.author, 'Invalid clock due to: {}'.format(valid[1]))
-            except AttributeError:
-                # Don't add reactions if the message isn't a Discord Clock.
-                pass
+            await flag_invalid_clock(message)  # Add a reaction to invalid clocks.
 
 
 @BOT.event
 async def on_message_edit(before, after):
-    if before.author.bot or after.author.bot:
+    if before.author.bot or after.author.bot:  # Ignore message changes by bots.
         return
 
-    if not str(after.channel.type) == 'private':
-        try:
-            # Make sure the message is in a channel that starts with the current year.
-            re.search("\d\d\d\d", after.channel.name).start()
-
-            valid = DiscordClock(after).is_valid
-            if not valid[0]:
-                # If the message was an invalid Discord Clock, add an exclamation reaction to show it.
-                await BOT.add_reaction(after, '\u2757')  # :exclamation:
-                await BOT.send_message(after.author, 'Invalid clock due to: {}'.format(valid[1]))
-            else:
-                # The message is now a valid Discord Clock, so remove the exclamation reaction.
-                if len(after.reactions) > 0:
-                    await BOT.remove_reaction(after, '\u2757', after.server.me)
-        except AttributeError:
-            # Don't add reactions if the message isn't a Discord Clock.
-            pass
+    if after.channel.type is not discord.ChannelType.private:
+        await flag_invalid_clock(after)  # Add a reaction to invalid clocks; or remove reaction on fixed clock.
 
 
 # ----- Commands -----
@@ -326,211 +476,126 @@ async def on_message_edit(before, after):
 
 @BOT.command(pass_context=True)
 async def clocks(ctx):
-    # [0] = discord_clocks | [1] = week_hours
-    clock_data = await clock_logic(ctx.message)
+    command = valid_clocks_command(ctx.message)
+    if command['valid']:
+        # Wipe previous missing and invalid clocks.
+        global SINGLE_CLOCKS, INVALID_CLOCKS
+        SINGLE_CLOCKS = {}
+        INVALID_CLOCKS = {}
 
-    # Get the message string.
-    content = get_member_clocks_type('string', clock_data[0], clock_data[1])
+        # Get values to needed before message deletion.
+        author = ctx.message.author
+        member = ctx.message.mentions[0]
+        channel = ctx.message.channel
+        cmd_args = ctx.message.content.split(' ')
+        start_date = cmd_args[2]  # 'MM/dd/yy'
 
-    if not len(content) > 2000:  # Character limit for Discord.
-        await BOT.send_message(ctx.message.author, content)
+        # Keep channel clean.
+        await BOT.delete_message(ctx.message)
+
+        clock_data = await get_clocks_and_hours(member, channel, start_date)
+
+        message_content = get_message_content(channel, member, clock_data)
+        if len(message_content) == 0:
+            await BOT.send_message(author, 'Unable to get message content.')
+        else:
+            for message in message_content:
+                await BOT.send_message(author, message)
     else:
-        await split_big_message(ctx.message.author, content)
-
-
-@BOT.command(pass_context=True)
-async def emclocks(ctx):
-    # [0] = discord_clocks | [1] = week_hours
-    clock_data = await clock_logic(ctx.message)
-
-    # Get the message string.
-    content = get_member_clocks_type('string', clock_data[0], clock_data[1])
-
-    # Get the message embed.
-    em = get_member_clocks_type('embed', clock_data[0], clock_data[1], False)
-
-    if not len(content) > 2000:  # Character limit for Discord.
-        await BOT.send_message(ctx.message.author, embed=em)
-    else:
-        await split_big_message(ctx.message.author, content)
+        await BOT.send_message(ctx.message.author, 'An error occurred when trying to run the command:\n{}'
+                               .format(command['error']))
+        await BOT.delete_message(ctx.message)
 
 
 @BOT.command(pass_context=True)
 async def times(ctx):
-    # member: [0] = discord_clocks | [1] = week_hours
-    times_data = await times_logic(ctx.message)
+    command = valid_times_command(ctx.message)
+    if command['valid']:
+        # Wipe previous missing and invalid clocks.
+        global SINGLE_CLOCKS, INVALID_CLOCKS
+        SINGLE_CLOCKS = {}
+        INVALID_CLOCKS = {}
 
-    for member in times_data.keys():
-        # Get the message string.
-        content = get_member_clocks_type('string', times_data[member][0], times_data[member][1])
+        # Get values to needed before message deletion.
+        author = ctx.message.author
+        channel = ctx.message.channel
+        cmd_args = ctx.message.content.split(' ')
+        start_date = cmd_args[1]  # 'MM/dd/yy'
 
-        if not len(content) > 2000:  # Character limit for Discord.
-            await BOT.send_message(ctx.message.author, content)
-        else:
-            await split_big_message(ctx.message.author, content)
+        # Keep channel clean.
+        await BOT.delete_message(ctx.message)
 
+        # Get clocks for each member.
+        for member in channel.server.members:
+            clock_data = await get_clocks_and_hours(member, channel, start_date)
 
-@BOT.command(pass_context=True)
-async def emtimes(ctx):
-    # member: [0] = discord_clocks | [1] = week_hours
-    times_data = await times_logic(ctx.message)
-
-    for member in times_data.keys():
-        # Get the message string.
-        content = get_member_clocks_type('string', times_data[member][0], times_data[member][1])
-
-        # Get the message embed.
-        em = get_member_clocks_type('embed', times_data[member][0], times_data[member][1], False)
-
-        if not len(content) > 2000:  # Character limit for Discord.
-            await BOT.send_message(ctx.message.author, embed=em)
-        else:
-            await split_big_message(ctx.message.author, content)
+            first_week_clocks = clock_data['clocks']['first-week']
+            second_week_clocks = clock_data['clocks']['second-week']
+            # Only do the following if the member had clocks.
+            if (len(first_week_clocks) + len(second_week_clocks)) > 0:
+                message_content = get_message_content(channel, member, clock_data)
+                if len(message_content) == 0:
+                    await BOT.send_message(author, 'Unable to get message content.')
+                else:
+                    for message in message_content:
+                        await BOT.send_message(author, message)
+    else:
+        await BOT.send_message(ctx.message.author, 'An error occurred when trying to run the command:\n{}'
+                               .format(command['error']))
+        await BOT.delete_message(ctx.message)
 
 
 @BOT.command(pass_context=True)
 async def clear(ctx):
-    message = ctx.message
-    channel = message.channel
-    if not str(channel.type) == 'private':
-        await BOT.delete_message(message)
-    logs = []
-    async for log in BOT.logs_from(channel):
-        if log.author.name == BOT_NAME:
-            logs.append(log)
-    received = len(logs)
-    await BOT.send_message(channel, 'Deleting {} message(s) . . .'.format(received))
-    while received > 0:
-        tmp = []
+    command = valid_clear_command(ctx.message)
+    if command['valid']:
+        message = ctx.message
+        channel = message.channel
+        if message.channel.type is not discord.ChannelType.private:
+            await BOT.delete_message(message)
+        history = []
         async for log in BOT.logs_from(channel):
-            if log.author.name == BOT_NAME:
-                tmp.append(log)
-                logs.append(log)
-        received = len(tmp)
-        for log in reversed(logs):
-            try:
-                await BOT.delete_message(log)
-                logs.remove(log)
-            except discord.NotFound:
-                pass
-
-
-# ----- Core Tracker Functions -----
-
-
-# Main logic for /clocks and /emclocks commands.
-async def clock_logic(message):
-    # Wipe previous missing and invalid clocks.
-    global SINGLE_CLOCKS, INVALID_CLOCKS
-    SINGLE_CLOCKS = {}
-    INVALID_CLOCKS = {}
-
-    command_user = message.author
-    if valid_clocks_command(message):
-        # Get the member the command pertains to.
-        member = message.mentions[0]  # @name
-
-        # Get the channel based on the command arguments.
-        channel = message.channel
-
-        # Get the command arguments.
-        cmd_args = message.content.split(' ')
-
-        # Set the dates based on command argument.
-        start_date = cmd_args[2]  # 'MM/dd/yy'
-        set_dates(start_date)
-
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(message)
-
-        # Get the messages that mentions the given member in the given channel.
-        history = await get_member_history(member, channel)
-
-        # Get the DiscordClocks from the message history.
-        discord_clocks = convert_history_to_clocks(history)
-
-        # Get hours of each week.
-        week_hours = hours_of_weeks(discord_clocks)
-
-        # Return clock data to be used.
-        return [discord_clocks, week_hours]
+            if log.author.name == BOT.user.name:
+                history.append(log)
+        received = len(history)
+        await BOT.send_message(channel, 'Found {} message(s); deleting . . .'.format(received))
+        while received > 0:
+            tmp = []
+            async for log in BOT.logs_from(channel):
+                if log.author.name == BOT.user.name:
+                    tmp.append(log)
+                    history.append(log)
+            received = len(tmp)
+            for log in reversed(history):
+                try:
+                    await BOT.delete_message(log)
+                    history.remove(log)
+                except discord.NotFound:
+                    pass
     else:
-        await BOT.delete_message(message)
-        await BOT.send_message(command_user, 'You may not have permissions to use this command.\n'
-                                             'Use ?{} to see command syntax and permissions.'.format(BOT_NAME))
+        await BOT.send_message(ctx.message.author, 'An error occurred when trying to run the command:\n{}'
+                               .format(command['error']))
+        await BOT.delete_message(ctx.message)
 
 
-# Main logic for /times and /emtimes commands.
-async def times_logic(message):
-    # Wipe previous missing and invalid clocks.
-    global SINGLE_CLOCKS, INVALID_CLOCKS
-    SINGLE_CLOCKS = {}
-    INVALID_CLOCKS = {}
+# ----- Main Logic -----
 
-    # Clear log file for new data.
-    with open('log.txt', 'w') as log_file:
-        log_file.write('')
 
-    command_user = message.author
-    if valid_times_command(message):
-        # Get the channel based on the command arguments.
-        channel = message.channel
+# Returns a dictionary of discord clocks and hours of the weeks.
+async def get_clocks_and_hours(member, channel, start_date):
+    set_dates(start_date)
 
-        # Get the command arguments.
-        cmd_args = message.content.split(' ')
+    # Get the messages that mentions the given member in the given channel.
+    history = await get_member_history(member, channel)
 
-        # Set the dates based on command argument.
-        start_date = cmd_args[1]  # 'MM/dd/yy'
-        set_dates(start_date)
+    # Get the Clocks from the message history.
+    discord_clocks = convert_history_to_clocks(history)
 
-        # Delete the command from the channel to keep the channel clean.
-        await BOT.delete_message(message)
+    # Get the hours of each week.
+    week_hours = hours_of_weeks(discord_clocks)
 
-        # Creates a list of the server members in alphabetically by last name.
-        members_alpha = []
-        for member in message.server.members:
-            if member.nick is not None:
-                members_alpha.append(' '.join(reversed(member.nick.split(' '))))
-            else:
-                members_alpha.append(' '.join(reversed(member.name.split(' '))))
-        members_alpha.sort()
-
-        # The above list was just names, this list is the actual member objects.
-        members = []
-        for am in members_alpha:
-            am = ' '.join(reversed(am.split(' ')))
-            for member in message.server.members:
-                if member.nick is not None:
-                    if member.nick.lower() == am.lower():
-                        members.append(member)
-                else:
-                    if member.name.lower() == am.lower():
-                        members.append(member)
-
-        await BOT.send_message(command_user, 'Gathering data . . .')
-        times_data = {}
-        for member in members:
-            # Get the messages that mentions the given member in the given channel.
-            history = await get_member_history(member, channel)
-
-            # No clocks for that member, so go to the next member.
-            if len(history) == 0:
-                continue
-
-            # Get the DiscordClocks from the message history.
-            discord_clocks = convert_history_to_clocks(history)
-
-            # Get hours of each week.
-            week_hours = hours_of_weeks(discord_clocks)
-
-            # Enter the data for the member.
-            times_data[member] = [discord_clocks, week_hours]
-
-        return times_data
-    else:
-        await BOT.delete_message(message)
-        await BOT.send_message(command_user, 'You may not have permissions to use this command.\n'
-                                             'Use ?{} to see command syntax and permissions.'.format(BOT_NAME))
+    # Return clock data.
+    return {'clocks': discord_clocks, 'hours': week_hours}
 
 
 # Gets the member's history before SECOND_WEEK_END.
@@ -540,7 +605,7 @@ async def get_member_history(member, channel):
             channel, limit=RETRIEVABLE_MESSAGE_AMOUNT, after=FIRST_WEEK_START,
             reverse=True
     ):
-        if message.mentions is not None and message.mentions[0] == member:
+        if message.mentions is not None and len(message.mentions) > 0 and message.mentions[0] == member:
             history.append(message)
 
     # This while loop is needed to make sure
@@ -558,227 +623,28 @@ async def get_member_history(member, channel):
     return history
 
 
-# Converts the list of messages to a list of DiscordClocks.
+# Converts the list of messages to a dictionary of first and second week Clocks.
 def convert_history_to_clocks(history):
-    discord_clocks = []
-    for message in history:
-        discord_clocks.append(DiscordClock(message))
-    return discord_clocks
-
-
-# Gets the data needed for the messages to be sent. Also logs SINGLE/INVALID_CLOCKS to a log.txt file.
-def get_member_clocks_type(clock_type, discord_clocks, week_hours, log_bad_clocks=True):
-    dc = discord_clocks[0]
-    member = dc.member
-    if member.nick is not None:
-        member = member.nick
-    else:
-        member = member.name
-    channel = dc.channel
-
-    str_clocks = convert_clocks_to_string_by_week(discord_clocks)
-    error = ''
-    if member in SINGLE_CLOCKS or member in INVALID_CLOCKS:
-        error += 'Hours calculated may be invalid due to having single or incorrectly formatted clocks.'
-        if log_bad_clocks:
-            with open('log.txt', 'a') as log_file:
-                singles = 'None\n'
-                invalids = 'None\n'
-                temp = ''
-                try:
-                    if member in SINGLE_CLOCKS:
-                        singles = SINGLE_CLOCKS[member]
-                        for single in singles:
-                            if single['In'] is not None:
-                                message = single['In']
-                                author = message.author
-                                if author.nick is not None:
-                                    author = author.nick
-                                else:
-                                    author = author.name
-                                member = message.member
-                                if member.nick is not None:
-                                    member = member.nick
-                                else:
-                                    member = member.name
-                                replace_len = len(message.content.split('>')[0]) + 1
-
-                                temp += (
-                                            format_message_timestamp(message.timestamp)
-                                            + ' | ' + author + ': @' + member
-                                            + message.content[replace_len:] + '\n'
-                                )
-                            if single['Out'] is not None:
-                                message = single['Out']
-                                author = message.author
-                                if author.nick is not None:
-                                    author = author.nick
-                                else:
-                                    author = author.name
-                                member = message.member
-                                if member.nick is not None:
-                                    member = member.nick
-                                else:
-                                    member = member.name
-                                replace_len = len(message.content.split('>')[0]) + 1
-
-                                temp += (
-                                            format_message_timestamp(message.timestamp)
-                                            + ' | ' + author + ': @' + member
-                                            + message.content[replace_len:] + '\n'
-                                )
-                        singles = temp
-                except TypeError:
-                    pass
-                temp = ''
-                if member in INVALID_CLOCKS:
-                    invalids = INVALID_CLOCKS[member]
-                    for invalid in invalids:
-                        message = invalid
-                        author = message.author
-                        if author.nick is not None:
-                            author = author.nick
-                        else:
-                            author = author.name
-                        member = message.mentions[0]
-                        if member.nick is not None:
-                            member = member.nick
-                        else:
-                            member = member.name
-                        replace_len = len(message.content.split('>')[0]) + 1
-
-                        temp += (
-                                    format_message_timestamp(message.timestamp)
-                                    + ' | ' + author + ': @' + member
-                                    + message.content[replace_len:] + '\n'
-                        )
-                    invalids = temp
-                log = (
-                    '{}\n\nSingle Clocks:\n{}\nInvalid Clocks:\n{}\n\n'.format(member, singles, invalids)
-                )
-                log_file.write(log)
-
-    main_info = 'Pay Period: **{} to {}**\nTotal Hours: **{}**\n{}'.format(
-        format_week_timestamp(FIRST_WEEK_START),
-        format_week_timestamp(SECOND_WEEK_END),
-        (week_hours[0] + week_hours[1]),
-        error
-    )
-
-    if clock_type == 'string':
-        return get_member_clocks_string(member, channel, main_info, str_clocks, week_hours)
-    else:
-        return get_member_clocks_embed(member, channel, main_info, str_clocks, week_hours)
-
-
-# Gets the string to be sent as a message for a member's clocks.
-def get_member_clocks_string(member, channel, main_info, str_clocks, week_hours):
-    str_clocks = (
-        '__**' + member + '** (' + channel.name + '):__\n\n'
-        + main_info + '\n\n'
-        + format_week_timestamp(FIRST_WEEK_START)
-        + ' to ' + format_week_timestamp(FIRST_WEEK_END)
-        + ': ' + str(week_hours[0]) + ' hours\n\n' + str_clocks[0] + '\n'
-        + format_week_timestamp(SECOND_WEEK_START)
-        + ' to ' + format_week_timestamp(SECOND_WEEK_END)
-        + ': ' + str(week_hours[1]) + ' hours\n\n' + str_clocks[1]
-    )
-    return str_clocks
-
-
-# Gets the embed to be sent as a message for a member's clocks.
-def get_member_clocks_embed(member, channel, main_info, str_clocks, week_hours):
-    em = discord.Embed(
-        title=member + ' (' + channel.name + '):',
-        description=main_info,
-        colour=0x0000ff
-    )
-    week_one = '{} to {}: {} hours'.format(
-        format_week_timestamp(FIRST_WEEK_START),
-        format_week_timestamp(FIRST_WEEK_END),
-        str(week_hours[0])
-    )
-    week_two = '{} to {}: {} hours'.format(
-        format_week_timestamp(SECOND_WEEK_START),
-        format_week_timestamp(SECOND_WEEK_END),
-        str(week_hours[1])
-    )
-    if len(str_clocks[0]) == 0:
-        str_clocks[0] = 'None'
-    em.add_field(name=week_one, value=str_clocks[0], inline=False)
-    if len(str_clocks[1]) == 0:
-        str_clocks[1] = 'None'
-    em.add_field(name=week_two, value=str_clocks[1], inline=False)
-    return em
-
-
-# Converts the list of DiscordClocks into a string.
-def convert_clocks_to_string_by_week(discord_clocks):
-    first_week = ''
-    second_week = ''
-    for dc in discord_clocks:
-        author = dc.author
-        if author is None:
-            author = 'Unknown'
-        elif author.nick is not None:
-            author = author.nick
-        else:
-            author = author.name
-
-        member = dc.member
-        if member is None:
-            member = 'Unknown'
-        elif member.nick is not None:
-            member = member.nick
-        else:
-            member = member.name
-
-        content = dc.content
-        replace_len = len(content.split('>')[0]) + 1
-        if within_first_week(dc.timestamp):
-            first_week += (
-                format_message_timestamp(dc.timestamp)
-                + ' | ' + author + ': @' + member
-                + content[replace_len:] + '\n'
-            )
-        else:
-            second_week += (
-                format_message_timestamp(dc.timestamp)
-                + ' | ' + author + ': @' + member
-                + content[replace_len:] + '\n'
-            )
-
-    return [first_week, second_week]
-
-
-# Sends more than one message for when the content is over 2000 characters.
-async def split_big_message(channel, str_message):
-    parts = str_message.split("):")
-    await BOT.send_message(channel, parts[0] + '):' + parts[1] + '):')
-    if len(parts) > 3:
-        await BOT.send_message(channel, (parts[2] + '):'))
-        await BOT.send_message(channel, parts[3])
-    else:
-        await BOT.send_message(channel, parts[2] + '):')
-
-
-# Returns a list of two elements that contains the hours worked for each week.
-def hours_of_weeks(discord_clocks):
     first_week_clocks = []
     second_week_clocks = []
-    for dc in discord_clocks:
-        if within_first_week(dc.timestamp):
-            first_week_clocks.append(dc)
+    for message in history:
+        clock = Clock(message)
+        if within_first_week(clock.timestamp):
+            first_week_clocks.append(clock)
         else:
-            second_week_clocks.append(dc)
+            second_week_clocks.append(clock)
+    return {'first-week': first_week_clocks, 'second-week': second_week_clocks}
 
-    first_week_clocks = associate_clocks(first_week_clocks)
-    second_week_clocks = associate_clocks(second_week_clocks)
+
+# Returns a dictionary that contains the hours worked for each week.
+def hours_of_weeks(discord_clocks):
+    first_week_clocks = associate_clocks(discord_clocks['first-week'])
+    second_week_clocks = associate_clocks(discord_clocks['second-week'])
 
     first_week_hours = calc_week_hours(first_week_clocks)
     second_week_hours = calc_week_hours(second_week_clocks)
 
-    return [first_week_hours, second_week_hours]
+    return {'first-week': first_week_hours, 'second-week': second_week_hours}
 
 
 # Helps calculate the hours by associating a clock-in with a clock-out. Also populates SINGLE/INVALID_CLOCKS.
@@ -809,18 +675,26 @@ def associate_clocks(discord_clocks):
                 if member not in INVALID_CLOCKS:
                     INVALID_CLOCKS[member] = []
                 INVALID_CLOCKS[member].append(dc)
-    except IndexError:
+    except IndexError as ie:
+        exception_log_write('WARNING', 'An exception occurred when trying to associate clocks: {}'.format(ie))
+        pass
+    except KeyError as ke:
+        exception_log_write('WARNING', 'An exception occurred when trying to associate clocks: {}'.format(ke))
         pass
 
     valid_clocks = []
-    for ac in associated_clocks:
-        if ac['Out'] is not None:
-            valid_clocks.append(ac)
-        else:
-            # Single clock
-            if member not in SINGLE_CLOCKS:
-                SINGLE_CLOCKS[member] = []
-            SINGLE_CLOCKS[member].append(ac)
+    try:
+        for ac in associated_clocks:
+            if ac['Out'] is not None:
+                valid_clocks.append(ac)
+            else:
+                # Single clock
+                if member not in SINGLE_CLOCKS:
+                    SINGLE_CLOCKS[member] = []
+                SINGLE_CLOCKS[member].append(ac)
+    except KeyError as ke:
+        exception_log_write('WARNING', 'An exception occurred when trying to associate clocks: {}'.format(ke))
+        pass
 
     return valid_clocks
 
@@ -828,12 +702,117 @@ def associate_clocks(discord_clocks):
 # Calculates the difference between an out and in time for each clock of the week; then it totals them.
 def calc_week_hours(week_clocks):
     total = 0.0
-    for dc in week_clocks:
-        total += (dc['Out'].quarter_time - dc['In'].quarter_time)
+    try:
+        for dc in week_clocks:
+            total += (dc['Out'].value - dc['In'].value)
+    except KeyError as ke:
+        exception_log_write('WARNING', "An exception occurred when trying to calculate the week's hours: {}".format(ke))
+        pass
     return total
 
 
-# ----- Week/Timestamp Functions -----
+# Converts the clock_data into a string to send as a message.
+def get_message_content(channel, member, clock_data):
+    # Check if the member had invalid or single clocks.
+    errors = ''
+    if member in INVALID_CLOCKS.keys():
+        errors += 'Hours calculated may be invalid due to invalid clocks.\n'
+    if member in SINGLE_CLOCKS.keys():
+        errors += 'Hours calculated may be invalid due to single clocks.\n'
+
+    # Create the pay period string and include errors above.
+    main_info = 'Pay Period: **{} to {}**\nTotal Hours: **{}**\n{}'.format(
+        format_week_timestamp(FIRST_WEEK_START),
+        format_week_timestamp(SECOND_WEEK_END),
+        (clock_data['hours']['first-week'] + clock_data['hours']['second-week']),
+        errors
+    )
+
+    # Get the clocks of the weeks as strings.
+    first_week_clocks = clocks_as_string(clock_data['clocks']['first-week'])
+    second_week_clocks = clocks_as_string(clock_data['clocks']['second-week'])
+
+    # Get member's name for use in message content string.
+    if member.nick is not None:
+        member = member.nick
+    else:
+        member = member.name
+
+    # Build the message content string.
+    message_content = (
+            '__**' + member + '** (' + channel.name + '):__\n\n'
+            + main_info + '\n\n'
+            + format_week_timestamp(FIRST_WEEK_START)
+            + ' to ' + format_week_timestamp(FIRST_WEEK_END)
+            + ': ' + str(clock_data['hours']['first-week']) + ' hours\n\n' + first_week_clocks + '\n'
+            + format_week_timestamp(SECOND_WEEK_START)
+            + ' to ' + format_week_timestamp(SECOND_WEEK_END)
+            + ': ' + str(clock_data['hours']['second-week']) + ' hours\n\n' + second_week_clocks
+    )
+
+    # Split the message if it is greater than 2000 characters.
+    if len(message_content) > 2000:  # Message length limit from Discord API.
+        message_content = split_message_content(message_content, first_week_clocks, second_week_clocks)
+    else:
+        message_content = [message_content]
+
+    return message_content
+
+
+# Converts a week's clocks into a string.
+def clocks_as_string(clocks_of_week):
+    week = ''
+    for clock in clocks_of_week:
+        # Get the name of the clock's sender.
+        author = clock.author
+        if author is None:
+            author = 'Unknown'
+        elif author.nick is not None:
+            author = author.nick
+        else:
+            author = author.name
+
+        # Get the name of the member the clock pertains to.
+        member = clock.member
+        if member is None:
+            member = 'Unknown'
+        elif member.nick is not None:
+            member = member.nick
+        else:
+            member = member.name
+
+        # Index after mention.
+        replace_len = len(clock.message.split('>')[0]) + 1
+
+        # Create the message string with the formatted message timestamp.
+        week += (
+                format_message_timestamp(clock.timestamp)
+                + ' | ' + author + ': @' + member
+                + clock.message[replace_len:] + '\n'
+        )
+
+    return week
+
+
+# Splits the message into two.
+def split_message_content(message_content, first_week_clocks, second_week_clocks):
+    # Remove the week clocks to split easier.
+    message_content = message_content.remove(first_week_clocks)
+    message_content = message_content.remove(second_week_clocks)
+
+    # Build the two message strings from split.
+    parts = message_content.split('\n')
+    try:
+        section_one = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4] + '\n'
+        section_two = parts[6] + '\n\n' + first_week_clocks + '\n' + parts[9] + '\n\n' + second_week_clocks
+        return [section_one, section_two]
+    except IndexError:
+        exception_log_write('WARNING', 'Unable to split message content. Did the original message change?')
+
+    return []
+
+
+# ----- Date and Timestamp Functions -----
 
 
 # Sets the pay period dates.
@@ -874,6 +853,9 @@ def within_first_week(timestamp):
 
 
 def format_message_timestamp(timestamp):
+    if DAYLIGHT_SAVINGS:
+        global LOCAL_UTC
+        LOCAL_UTC -= 1
     return (timestamp + timedelta(hours=LOCAL_UTC)).strftime(MESSAGE_TIMESTAMP_FORMAT)
 
 
@@ -881,51 +863,106 @@ def format_week_timestamp(timestamp):
     return timestamp.strftime(WEEK_TIMESTAMP_FORMAT)
 
 
-# ----- Helper Functions -----
+# ----- Valid Command Checks -----
 
 
 def valid_help_command(message):
-    if message.content.lower() == ('?' + BOT_NAME.lower()):
-        return True
-    if message.content.lower() == ('/' + BOT_NAME.lower()):
-        return True
-    if message.content.lower() == '/help':
-        return True
-    return False
+    if message.content.lower() == ('?' + BOT.user.name.lower()):
+        return {'valid': True, 'error': None}
+    if message.content.lower() == (CMD_PREFIX + BOT.user.name.lower()):
+        return {'valid': True, 'error': None}
+    if message.content.lower() == (CMD_PREFIX + 'help'):
+        return {'valid': True, 'error': None}
+    return {'valid': False, 'error': 'Not a valid help command.'}
 
 
-def valid_clocks_command(command):
-    if command.channel.is_private:
-        return False
-    if len(command.mentions) == 0:
-        return False
-    args = command.content.split(' ')
+def valid_clocks_command(message):
+    if message.channel.is_private:
+        return {'valid': False, 'error': 'Command cannot be run from a private channel.'}
+    if len(message.mentions) == 0:
+        return {'valid': False, 'error': 'Command is missing a mention.'}
+    args = message.content.split(' ')
     if len(args) < 3:
-        return False
-    elif '@' not in args[1] or '/' not in args[2]:
-        return False
+        return {'valid': False, 'error': 'Command is missing one or more of its arguments.'}
+    elif len(args) > 3:
+        return {'valid': False, 'error': 'Command has too many arguments.'}
+    elif '@' not in args[1]:
+        return {'valid': False, 'error': 'Command is missing a valid mention.'}
+    elif '/' not in args[2]:
+        return {'valid': False, 'error': 'Command is missing a valid date.'}
     else:
         date_parts = args[-1].split('/')
         for part in date_parts:
             if not is_integer(part):
-                return False
-    return True
+                return {'valid': False, 'error': 'Invalid date format.'}
+    return {'valid': True, 'error': None}
 
 
-def valid_times_command(command):
-    if command.channel.is_private:
-        return False
-    args = command.content.split(' ')
-    if len(args) < 2 or '/' not in args[1]:
-        return False
+def valid_times_command(message):
+    if message.channel.is_private:
+        return {'valid': False, 'error': 'Command cannot be run from a private channel.'}
+
+    args = message.content.split(' ')
+    if len(args) < 2:
+        return {'valid': False, 'error': 'Command is missing one or more of its arguments.'}
+    elif len(args) > 2:
+        return {'valid': False, 'error': 'Command has too many arguments.'}
+    elif '/' not in args[1]:
+        return {'valid': False, 'error': 'Command is missing a valid date.'}
     else:
         date_parts = args[1].split('/')
         for part in date_parts:
             if not is_integer(part):
-                return False
-    return True
+                return {'valid': False, 'error': 'Invalid date format.'}
+
+    valid = False
+    error = 'The user does not have permission to use this command.'
+    for role in message.author.roles:
+        if PROTECTED_ROLE in role.name:
+            valid = True
+            error = None
+
+    return {'valid': valid, 'error': error}
 
 
+def valid_clear_command(message):
+    if message.channel.type is discord.ChannelType.private:
+        return {'valid': True, 'error': None}
+    else:
+        valid = False
+        error = 'The user does not have permission to use this command in this channel.'
+        for role in message.author.roles:
+            if PROTECTED_ROLE in role.name:
+                valid = True
+                error = None
+        return {'valid': valid, 'error': error}
+
+
+# ----- Misc -----
+
+
+# New and edited messages are flagged with a reaction if they are invalid.
+# New messages are not flagged if they are valid.
+# Edited messages have their flag removed if they are now valid.
+async def flag_invalid_clock(message):
+    try:
+        # Make sure the message is in a channel that starts with the current year.
+        re.search("\d\d\d\d", message.channel.name).start()
+
+        if Clock(message).error is not None:
+            # If the message was an invalid Discord Clock, add an exclamation reaction to show it.
+            await BOT.add_reaction(message, '\u2757')  # :exclamation:
+            await BOT.send_message(message.author, 'Invalid clock due to: {}'.format(Clock(message).error))
+        else:
+            # The message is now a valid Discord Clock, so remove the exclamation reaction.
+            if len(message.reactions) > 0:
+                await BOT.remove_reaction(message, '\u2757', message.server.me)
+    except AttributeError:
+        # Don't add reactions if the message isn't a Discord Clock.
+        pass
+
+
+# Checks if a string is numeric.
 def is_integer(s):
     try:
         int(s)
@@ -934,13 +971,10 @@ def is_integer(s):
         return False
 
 
-# ----- Misc Functions -----
-
-
-# Sends info about the bot.
+# Sends info about the bot and its commands.
 async def help_info(channel):
     about = 'A bot that helps track and calculate times.'
-    em = discord.Embed(title='__' + BOT_NAME + ' Commands__', description=about, colour=0x0000ff)
+    em = discord.Embed(title='__' + BOT.user.name + ' Commands__', description=about, colour=0x0000ff)
     em.add_field(
         name='/clocks @user mm/dd/yy',
         value="- This command gets the clock-ins and clock-outs for the specified user.\n"
@@ -958,15 +992,7 @@ async def help_info(channel):
               '- Who can use: @' + PROTECTED_ROLE,
         inline=False)
     em.add_field(
-        name='/emclocks @user mm/dd/yy',
-        value='Same as the above command except messages are embeds if they are under 2000 characters.',
-        inline=False)
-    em.add_field(
-        name='/emtimes mm/dd/yy',
-        value='Same as the above command except messages are embeds if they are under 2000 characters.',
-        inline=False)
-    em.add_field(
-        name='?' + BOT_NAME + ' or /' + BOT_NAME + ' or /help',
+        name='?' + BOT.user.name + ' or /' + BOT.user.name + ' or /help',
         value='Sends this message.',
         inline=False)
 
@@ -1046,9 +1072,8 @@ async def help_info(channel):
     await BOT.send_message(channel, embed=em_four)
 
 
+# Try to start the bot. Log and exit if there was an error.
 try:
-    # Bot start
     BOT.run(BOT_TOKEN)
-except ValueError as ve:
-    print(ve)
-    pass
+except Exception as e:
+    exception_log_write('CRITICAL', 'An exception occurred when trying to run the bot: {}'.format(e))

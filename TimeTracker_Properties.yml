@@ -1,27 +1,39 @@
-# The name for the bot to call itself; different from the bot's app name, but can be the same.
-name: "TimeTracker"
-# The bot's Application ID
-id: ""
 # The bot's login token.
 token: ""
+
 # The prefix for the bot's commands.
-prefix: "/"
-# The role name that allows role protecting commands to run.
+prefix: "!"
+
+# The role name that gives permissions for protected commands.
 role: "Tracker"
-# The local timezone of whoever is using the bot.
+
+# The log file that contains clock messages with errors.
+clock-log: "./Clock_Exceptions_Log.txt"
+
+# The log file that contains program exceptions.
+exception-log: "./TimeTracker_Exception_Log.txt"
+
+# The local timezone used for determining message times.
 local-utc: -7
+
+# Tells the bot if daylight saving's time is used for determining message times.
+daylight-savings: yes
+
 # The formats for a discord message's timestamp and the week's timestamp.
 # Values are from: https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
 message-timestamp-format: "%m/%d/%y (%A) @ %I:%M %p"
 week-timestamp-format: "%m/%d/%y (%A)"
+
 # List of words the bot will recognize as a clock-in.
 in-words:
   - "In"
   - "Back"
+
 # List of words the bot will recognize as a clock-out.
 out-words:
   - "Out"
   - "Off"
+
 # A variable that allows the bot to retrieve message history.
-# This value will need to increase the further out someone wants to get the message history.
+# This value will need to increase the further out a user wants to get the message history.
 message-recall: 300
