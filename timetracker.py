@@ -219,6 +219,7 @@ def initialize_bot():
         BOT = commands.Bot(command_prefix=CMD_PREFIX, help_attrs={'disabled': True})
 
         print('The bot will use the following values:')
+        print()
         print('Exception Log File Path: {}'.format(EXCEPTION_LOG))
         print('Command Prefix: {}'.format(CMD_PREFIX))
         print('Protected Command Role: {}'.format(PROTECTED_ROLE))
@@ -262,6 +263,10 @@ class Clock:
     def __init__(self, discord_message):
         self.error = None
         self.raw = discord_message
+        self.author = discord_message.author
+        self.message = discord_message.content
+        self.channel = discord_message.channel
+        self.timestamp = discord_message.timestamp
         try:
             if len(discord_message.mentions) > 1:
                 self.error = 'Too many mentions.'
@@ -270,10 +275,6 @@ class Clock:
         except IndexError:
             self.error = 'Missing mention.'
             return
-        self.author = discord_message.author
-        self.message = discord_message.content
-        self.channel = discord_message.channel
-        self.timestamp = discord_message.timestamp
         self.type = self.get_clock_type()
         if len(self.type) > 3:
             self.error = 'Unknown clock type.'
@@ -326,7 +327,9 @@ class Clock:
         if requires_meridiem:
             words = time_start.split(' ')
             if len(words) <= 1:
-                return 'Missing meridiem.'
+                meridiem = time_start[time_count:][:2].lower()
+                if not (meridiem == 'am' or meridiem == 'pm'):
+                    return 'Missing meridiem.'
             else:
                 meridiem = words[1]
 
@@ -493,6 +496,10 @@ async def clocks(ctx):
         # Keep channel clean.
         await BOT.delete_message(ctx.message)
 
+        # Clear the clock logs.
+        with open(CLOCK_LOG, 'w') as log_file:
+            log_file.write('')
+
         clock_data = await get_clocks_and_hours(member, channel, start_date)
 
         message_content = get_message_content(channel, member, clock_data)
@@ -525,6 +532,10 @@ async def times(ctx):
         # Keep channel clean.
         await BOT.delete_message(ctx.message)
 
+        # Clear the clock logs.
+        with open(CLOCK_LOG, 'w') as log_file:
+            log_file.write('')
+
         # Get clocks for each member.
         for member in channel.server.members:
             clock_data = await get_clocks_and_hours(member, channel, start_date)
@@ -551,27 +562,34 @@ async def clear(ctx):
     if command['valid']:
         message = ctx.message
         channel = message.channel
+
+        # Keep channel clean.
         if message.channel.type is not discord.ChannelType.private:
             await BOT.delete_message(message)
+
+        # Get the bot's message history.
         history = []
         async for log in BOT.logs_from(channel):
             if log.author.name == BOT.user.name:
                 history.append(log)
+
+        # Get the amount of messages and notify the user.
         received = len(history)
-        await BOT.send_message(channel, 'Found {} message(s); deleting . . .'.format(received))
+        notification = await BOT.send_message(channel, 'Deleting {} message(s) . . .'.format(received))
+
+        # While there are still messages to delete; delete them and update message count.
         while received > 0:
-            tmp = []
-            async for log in BOT.logs_from(channel):
-                if log.author.name == BOT.user.name:
-                    tmp.append(log)
-                    history.append(log)
-            received = len(tmp)
+            received = len(history)
             for log in reversed(history):
                 try:
                     await BOT.delete_message(log)
                     history.remove(log)
+                    await BOT.edit_message(notification, 'Deleting {} message(s) . . .'.format(len(history)))
                 except discord.NotFound:
                     pass
+
+        # Delete the notification message when finished.
+        await BOT.delete_message(notification)
     else:
         await BOT.send_message(ctx.message.author, 'An error occurred when trying to run the command:\n{}'
                                .format(command['error']))
@@ -653,10 +671,6 @@ def associate_clocks(discord_clocks):
     if len(discord_clocks) == 0:
         return []
     member = discord_clocks[0].member
-    if member.nick is not None:
-        member = member.nick
-    else:
-        member = member.name
     associated_clocks = []
     try:
         for dc in discord_clocks:
@@ -664,7 +678,7 @@ def associate_clocks(discord_clocks):
                 if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
                     associated_clocks[-1]['Out'] = dc
                 else:
-                    # Single clock
+                    # Single clock-out
                     if member not in SINGLE_CLOCKS:
                         SINGLE_CLOCKS[member] = []
                     SINGLE_CLOCKS[member].append(dc)
@@ -688,10 +702,10 @@ def associate_clocks(discord_clocks):
             if ac['Out'] is not None:
                 valid_clocks.append(ac)
             else:
-                # Single clock
+                # Single clock-in
                 if member not in SINGLE_CLOCKS:
                     SINGLE_CLOCKS[member] = []
-                SINGLE_CLOCKS[member].append(ac)
+                SINGLE_CLOCKS[member].append(ac['In'])
     except KeyError as ke:
         exception_log_write('WARNING', 'An exception occurred when trying to associate clocks: {}'.format(ke))
         pass
@@ -713,12 +727,18 @@ def calc_week_hours(week_clocks):
 
 # Converts the clock_data into a string to send as a message.
 def get_message_content(channel, member, clock_data):
+    member_name = member.name
+    if member.nick is not None:
+        member_name = member.nick
+
     # Check if the member had invalid or single clocks.
     errors = ''
     if member in INVALID_CLOCKS.keys():
         errors += 'Hours calculated may be invalid due to invalid clocks.\n'
+        log_invalids(member_name, member)
     if member in SINGLE_CLOCKS.keys():
         errors += 'Hours calculated may be invalid due to single clocks.\n'
+        log_singles(member_name, member)
 
     # Create the pay period string and include errors above.
     main_info = 'Pay Period: **{} to {}**\nTotal Hours: **{}**\n{}'.format(
@@ -939,6 +959,40 @@ def valid_clear_command(message):
 
 
 # ----- Misc -----
+
+
+def log_invalids(member_name, member):
+    with open(CLOCK_LOG, 'a') as log_file:
+        log_file.write('Invalid Clocks for {}:\n\n'.format(member_name))
+        for clock in INVALID_CLOCKS[member]:
+            replace_len = len(clock.message.split('>')[0]) + 1
+            author_name = clock.author.name
+            if clock.author.nick is not None:
+                author_name = clock.author.nick
+            log_file.write(
+                format_message_timestamp(clock.timestamp)
+                + ' | ' + author_name + ': @' + member_name
+                + clock.message[replace_len:] + '\n'
+                + '    Reason: {}\n'.format(clock.error)
+            )
+        log_file.write('\n\n')
+
+
+def log_singles(member_name, member):
+    with open(CLOCK_LOG, 'a') as log_file:
+        log_file.write('Single Clocks for {}:\n\n'.format(member_name))
+        for clock in SINGLE_CLOCKS[member]:
+            replace_len = len(clock.message.split('>')[0]) + 1
+            author_name = clock.author.name
+            if clock.author.nick is not None:
+                author_name = clock.author.nick
+            log_file.write(
+                format_message_timestamp(clock.timestamp)
+                + ' | ' + author_name + ': @' + member_name
+                + clock.message[replace_len:] + '\n'
+                + '    Reason: {}\n'.format(clock.error)
+            )
+        log_file.write('\n\n')
 
 
 # New and edited messages are flagged with a reaction if they are invalid.
