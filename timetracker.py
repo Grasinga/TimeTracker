@@ -218,8 +218,6 @@ def initialize_bot():
         global BOT
         BOT = commands.Bot(command_prefix=CMD_PREFIX, help_attrs={'disabled': True})
 
-        print('The bot will use the following values:')
-        print()
         print('Exception Log File Path: {}'.format(EXCEPTION_LOG))
         print('Command Prefix: {}'.format(CMD_PREFIX))
         print('Protected Command Role: {}'.format(PROTECTED_ROLE))
@@ -359,7 +357,7 @@ class Clock:
         return "Unable to calculate the clock's time."
 
     def __calc_quarter_time__(self, hour, minutes, meridiem):
-        if meridiem == '' or meridiem == 'am':
+        if meridiem.lower() == '' or meridiem.lower() == 'am':
             return self.__quarter_hour__(hour, minutes)
         else:
             hour = int(hour)
@@ -439,6 +437,11 @@ async def on_ready():
                 # Kills the bot for all servers if the bot does not have admin permissions on one of them. (Lazy)
                 exception_log_write('CRITICAL',
                                     'The bot needs administrator privileges to run on: {}'.format(server.name))
+
+    # Adjust local UTC for daylight savings.
+    if DAYLIGHT_SAVINGS:
+        global LOCAL_UTC
+        LOCAL_UTC -= 1
 
 
 @BOT.event
@@ -536,8 +539,29 @@ async def times(ctx):
         with open(CLOCK_LOG, 'w') as log_file:
             log_file.write('')
 
-        # Get clocks for each member.
+        # Get the members in alphabetical order based on Discord name.
+        members_alpha = []
         for member in channel.server.members:
+            if member.nick is not None:
+                members_alpha.append(' '.join(reversed(member.nick.split(' '))))
+            else:
+                members_alpha.append(' '.join(reversed(member.name.split(' '))))
+        members_alpha.sort()
+
+        # Get the members in alphabetical order based on Discord member.
+        members = []
+        for am in members_alpha:
+            am = ' '.join(reversed(am.split(' ')))
+            for member in channel.server.members:
+                if member.nick is not None:
+                    if member.nick.lower() == am.lower():
+                        members.append(member)
+                else:
+                    if member.name.lower() == am.lower():
+                        members.append(member)
+
+        # Get clocks for each member.
+        for member in members:
             clock_data = await get_clocks_and_hours(member, channel, start_date)
 
             first_week_clocks = clock_data['clocks']['first-week']
@@ -761,13 +785,15 @@ def get_message_content(channel, member, clock_data):
     # Build the message content string.
     message_content = (
             '__**' + member + '** (' + channel.name + '):__\n\n'
-            + main_info + '\n\n'
+            + main_info + '\n'
+            + '```'
             + format_week_timestamp(FIRST_WEEK_START)
             + ' to ' + format_week_timestamp(FIRST_WEEK_END)
             + ': ' + str(clock_data['hours']['first-week']) + ' hours\n\n' + first_week_clocks + '\n'
             + format_week_timestamp(SECOND_WEEK_START)
             + ' to ' + format_week_timestamp(SECOND_WEEK_END)
             + ': ' + str(clock_data['hours']['second-week']) + ' hours\n\n' + second_week_clocks
+            + '```'
     )
 
     # Split the message if it is greater than 2000 characters.
@@ -823,8 +849,10 @@ def split_message_content(message_content, first_week_clocks, second_week_clocks
     # Build the two message strings from split.
     parts = message_content.split('\n')
     try:
-        section_one = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4] + '\n'
-        section_two = parts[6] + '\n\n' + first_week_clocks + '\n' + parts[9] + '\n\n' + second_week_clocks
+        section_one = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4]
+        section_two = ('```'
+                       + parts[5] + '\n\n' + first_week_clocks + '\n' + parts[8] + '\n\n' + second_week_clocks
+                       + '```')
         return [section_one, section_two]
     except IndexError:
         exception_log_write('WARNING', 'Unable to split message content. Did the original message change?')
@@ -873,9 +901,6 @@ def within_first_week(timestamp):
 
 
 def format_message_timestamp(timestamp):
-    if DAYLIGHT_SAVINGS:
-        global LOCAL_UTC
-        LOCAL_UTC -= 1
     return (timestamp + timedelta(hours=LOCAL_UTC)).strftime(MESSAGE_TIMESTAMP_FORMAT)
 
 
@@ -915,6 +940,10 @@ def valid_clocks_command(message):
         for part in date_parts:
             if not is_integer(part):
                 return {'valid': False, 'error': 'Invalid date format.'}
+        try:
+            datetime.strptime(args[-1], '%m/%d/%y')
+        except ValueError:
+            return {'valid': False, 'error': 'Invalid date format.'}
     return {'valid': True, 'error': None}
 
 
@@ -934,6 +963,10 @@ def valid_times_command(message):
         for part in date_parts:
             if not is_integer(part):
                 return {'valid': False, 'error': 'Invalid date format.'}
+        try:
+            datetime.strptime(args[-1], '%m/%d/%y')
+        except ValueError:
+            return {'valid': False, 'error': 'Invalid date format.'}
 
     valid = False
     error = 'The user does not have permission to use this command.'
@@ -986,11 +1019,15 @@ def log_singles(member_name, member):
             author_name = clock.author.name
             if clock.author.nick is not None:
                 author_name = clock.author.nick
+            if clock.type == 'In':
+                error = 'Missing clock-out.'
+            else:
+                error = 'Missing clock-in.'
             log_file.write(
                 format_message_timestamp(clock.timestamp)
                 + ' | ' + author_name + ': @' + member_name
                 + clock.message[replace_len:] + '\n'
-                + '    Reason: {}\n'.format(clock.error)
+                + '    Reason: {}\n'.format(error)
             )
         log_file.write('\n\n')
 
