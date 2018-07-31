@@ -7,35 +7,32 @@ import sys
 import yaml
 from datetime import datetime, timedelta
 
-
 properties_file_path = 'TimeTracker_Properties.yml'
-
 
 # ----- Global properties defined in the properties file -----
 
 
-EXCEPTION_LOG = None
-CLOCK_LOG = None
-BOT_TOKEN = None
-CMD_PREFIX = None
-PROTECTED_ROLE = None
-LOCAL_UTC = None
-DAYLIGHT_SAVINGS = None
-MESSAGE_TIMESTAMP_FORMAT = None
-WEEK_TIMESTAMP_FORMAT = None
-CLOCK_IN_WORDS = None
-CLOCK_OUT_WORDS = None
-RETRIEVABLE_MESSAGE_AMOUNT = None
-
+EXCEPTION_LOG = './default_exceptions.txt'
+CLOCK_LOG = './default_clock_exceptions.txt'
+BOT_TOKEN = ''
+CMD_PREFIX = ''
+PROTECTED_ROLE = 'Tracker'
+LOCAL_UTC = -7
+DAYLIGHT_SAVINGS = False
+MESSAGE_TIMESTAMP_FORMAT = ''
+WEEK_TIMESTAMP_FORMAT = ''
+CLOCK_IN_WORDS = []
+CLOCK_OUT_WORDS = []
+RETRIEVABLE_MESSAGE_AMOUNT = 300
 
 # ----- Global properties not defined in the properties file -----
 
 
 BOT = None
-FIRST_WEEK_START = None
-FIRST_WEEK_END = None
-SECOND_WEEK_START = None
-SECOND_WEEK_END = None
+FIRST_WEEK_START = datetime.now()
+FIRST_WEEK_END = datetime.now()
+SECOND_WEEK_START = datetime.now()
+SECOND_WEEK_END = datetime.now()
 SINGLE_CLOCKS = {}
 INVALID_CLOCKS = {}
 
@@ -249,7 +246,7 @@ def exception_log_write(warning_type, exception, channel=None):
     if warning_type == 'CRITICAL':
         try:
             BOT.close()
-        except:
+        except Exception:
             pass
         sys.exit()
 
@@ -407,7 +404,8 @@ class Clock:
 
         return hour + self.__convert_minutes_to_quarter__(minutes)
 
-    def __convert_minutes_to_quarter__(self, minutes):
+    @staticmethod
+    def __convert_minutes_to_quarter__(minutes):
         if minutes == 0:
             return 0
         if minutes == 15:
@@ -489,7 +487,7 @@ async def clocks(ctx):
         SINGLE_CLOCKS = {}
         INVALID_CLOCKS = {}
 
-        # Get values to needed before message deletion.
+        # Get values needed before message deletion.
         author = ctx.message.author
         member = ctx.message.mentions[0]
         channel = ctx.message.channel
@@ -640,7 +638,7 @@ async def get_clocks_and_hours(member, channel, start_date):
     return {'clocks': discord_clocks, 'hours': week_hours}
 
 
-# Gets the member's history before SECOND_WEEK_END.
+# Gets the member's history.
 async def get_member_history(member, channel):
     history = []
     async for message in BOT.logs_from(
@@ -699,8 +697,14 @@ def associate_clocks(discord_clocks):
     try:
         for dc in discord_clocks:
             if dc.type == 'Out':
-                if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
-                    associated_clocks[-1]['Out'] = dc
+                if len(associated_clocks) > 0:
+                    if associated_clocks[-1] is not None and associated_clocks[-1]['Out'] is None:
+                        associated_clocks[-1]['Out'] = dc
+                    else:
+                        # Single clock-out
+                        if member not in SINGLE_CLOCKS:
+                            SINGLE_CLOCKS[member] = []
+                        SINGLE_CLOCKS[member].append(dc)
                 else:
                     # Single clock-out
                     if member not in SINGLE_CLOCKS:
@@ -786,14 +790,12 @@ def get_message_content(channel, member, clock_data):
     message_content = (
             '__**' + member + '** (' + channel.name + '):__\n\n'
             + main_info + '\n'
-            + '```'
-            + format_week_timestamp(FIRST_WEEK_START)
-            + ' to ' + format_week_timestamp(FIRST_WEEK_END)
-            + ': ' + str(clock_data['hours']['first-week']) + ' hours\n\n' + first_week_clocks + '\n'
-            + format_week_timestamp(SECOND_WEEK_START)
-            + ' to ' + format_week_timestamp(SECOND_WEEK_END)
-            + ': ' + str(clock_data['hours']['second-week']) + ' hours\n\n' + second_week_clocks
-            + '```'
+            + format_week_timestamp(FIRST_WEEK_START) + ' to ' + format_week_timestamp(FIRST_WEEK_END)
+            + ': ' + str(clock_data['hours']['first-week']) + ' hours\n'
+            + '```\n' + first_week_clocks + '\n```\n'
+            + format_week_timestamp(SECOND_WEEK_START) + ' to ' + format_week_timestamp(SECOND_WEEK_END)
+            + ': ' + str(clock_data['hours']['second-week']) + ' hours\n'
+            + '```\n' + second_week_clocks + '\n```'
     )
 
     # Split the message if it is greater than 2000 characters.
@@ -837,23 +839,24 @@ def clocks_as_string(clocks_of_week):
                 + clock.message[replace_len:] + '\n'
         )
 
+    if len(week) == 0:
+        return ' '  # Needed for empty code block.
     return week
 
 
 # Splits the message into two.
 def split_message_content(message_content, first_week_clocks, second_week_clocks):
     # Remove the week clocks to split easier.
-    message_content = message_content.remove(first_week_clocks)
-    message_content = message_content.remove(second_week_clocks)
+    message_content = message_content.replace(first_week_clocks, '')
+    message_content = message_content.replace(second_week_clocks, '')
 
     # Build the two message strings from split.
     parts = message_content.split('\n')
     try:
-        section_one = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4]
-        section_two = ('```'
-                       + parts[5] + '\n\n' + first_week_clocks + '\n' + parts[8] + '\n\n' + second_week_clocks
-                       + '```')
-        return [section_one, section_two]
+        section_heading = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4] + '\n'
+        section_one = (parts[6] + '```' + first_week_clocks + '```')
+        section_two = (parts[10] + '```' + second_week_clocks + '```')
+        return [section_heading, section_one, section_two]
     except IndexError:
         exception_log_write('WARNING', 'Unable to split message content. Did the original message change?')
 
@@ -893,7 +896,7 @@ def end_of_second_week():
 
 
 def within_pay_period(dt):
-    return FIRST_WEEK_START < dt < SECOND_WEEK_END
+    return FIRST_WEEK_START <= dt <= SECOND_WEEK_END
 
 
 def within_first_week(timestamp):
@@ -1037,7 +1040,7 @@ def log_singles(member_name, member):
 # Edited messages have their flag removed if they are now valid.
 async def flag_invalid_clock(message):
     try:
-        # Make sure the message is in a channel that starts with the current year.
+        # Make sure the message is in a channel that starts with a year.
         re.search("\d\d\d\d", message.channel.name).start()
 
         if Clock(message).error is not None:
