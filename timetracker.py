@@ -11,7 +11,6 @@ properties_file_path = 'TimeTracker_Properties.yml'
 
 # ----- Global properties defined in the properties file -----
 
-
 EXCEPTION_LOG = './default_exceptions.txt'
 CLOCK_LOG = './default_clock_exceptions.txt'
 BOT_TOKEN = ''
@@ -26,7 +25,6 @@ CLOCK_OUT_WORDS = []
 RETRIEVABLE_MESSAGE_AMOUNT = 300
 
 # ----- Global properties not defined in the properties file -----
-
 
 BOT = None
 FIRST_WEEK_START = datetime.now()
@@ -246,7 +244,8 @@ def exception_log_write(warning_type, exception, channel=None):
     if warning_type == 'CRITICAL':
         try:
             BOT.close()
-        except Exception:
+        except Exception as ex:
+            print(ex)
             pass
         sys.exit()
 
@@ -852,10 +851,24 @@ def split_message_content(message_content, first_week_clocks, second_week_clocks
 
     # Build the two message strings from split.
     parts = message_content.split('\n')
+    parts[:] = [x for x in parts if x != '']
+    parts[:] = [x for x in parts if x != '```']
     try:
-        section_heading = parts[0] + '\n\n' + parts[2] + '\n' + parts[3] + '\n' + parts[4] + '\n'
-        section_one = (parts[6] + '```' + first_week_clocks + '```')
-        section_two = (parts[10] + '```' + second_week_clocks + '```')
+        section_heading = ''
+        section_one = ''
+        section_two = ''
+        if len(parts) == 5:
+            section_heading = '{}\n\n{}\n{}\n'.format(parts[0], parts[1], parts[2])
+            section_one = (parts[3] + '```' + first_week_clocks + '```')
+            section_two = (parts[4] + '```' + second_week_clocks + '```')
+        if len(parts) == 6:
+            section_heading = '{}\n\n{}\n{}\n{}\n'.format(parts[0], parts[1], parts[2], parts[3])
+            section_one = (parts[4] + '```' + first_week_clocks + '```')
+            section_two = (parts[5] + '```' + second_week_clocks + '```')
+        if len(parts) == 7:
+            section_heading = '{}\n\n{}\n{}\n{}\n{}\n'.format(parts[0], parts[1], parts[2], parts[3], parts[4])
+            section_one = (parts[5] + '```' + first_week_clocks + '```')
+            section_two = (parts[6] + '```' + second_week_clocks + '```')
         return [section_heading, section_one, section_two]
     except IndexError:
         exception_log_write('WARNING', 'Unable to split message content. Did the original message change?')
