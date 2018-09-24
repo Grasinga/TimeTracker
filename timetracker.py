@@ -641,11 +641,12 @@ async def get_clocks_and_hours(member, channel, start_date):
 async def get_member_history(member, channel):
     history = []
     async for message in BOT.logs_from(
-            channel, limit=RETRIEVABLE_MESSAGE_AMOUNT, after=FIRST_WEEK_START,
+            channel, limit=RETRIEVABLE_MESSAGE_AMOUNT, after=FIRST_WEEK_START, before=SECOND_WEEK_END,
             reverse=True
     ):
         if message.mentions is not None and len(message.mentions) > 0 and message.mentions[0] == member:
-            history.append(message)
+            if within_pay_period(message.timestamp + timedelta(hours=LOCAL_UTC)):
+                history.append(message)
 
     # This while loop is needed to make sure
     # all messages are tested after async above.
